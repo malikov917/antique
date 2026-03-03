@@ -20,9 +20,21 @@ Agent-first monorepo for a cross-platform reels-style antique marketplace MVP.
    - `pnpm dev:mobile`
 
 ## Quality Gates
+- `./scripts/check.sh`
 - `pnpm lint`
 - `pnpm typecheck`
 - `pnpm test`
+
+## Local Build + Run + Verify
+- `pnpm ensure:local`
+- This command runs:
+  - lint + typecheck + tests (`pnpm check`)
+  - API build (`pnpm build`)
+  - API runtime smoke (`/health` and `/v1/feed`)
+  - mobile runtime smoke (Expo/Metro boot check via `/status`)
+- Optional environment variables:
+  - `API_PORT` (default `4000`)
+  - `MOBILE_PORT` (default `8081`)
 
 ## Repository Layout
 - `apps/mobile`: Expo app with reels feed and upload flow
@@ -31,4 +43,3 @@ Agent-first monorepo for a cross-platform reels-style antique marketplace MVP.
 - `.agents/skills`: project-local reusable skills
 - `.github/workflows`: CI
 - `docs`: release and operating docs
-
