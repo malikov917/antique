@@ -3,6 +3,8 @@
   "private": true,
   "packageManager": "pnpm@10.12.4",
   "scripts": {
+    "check": "./scripts/check.sh",
+    "ensure:local": "./scripts/ensure-local.sh",
     "lint": "pnpm -r lint",
     "typecheck": "pnpm --filter @antique/mobile typecheck && tsc -b",
     "test": "pnpm -r test",
