@@ -74,7 +74,7 @@ export function UploadFlow({ onDone }: { onDone: () => void }) {
   };
 
   return (
-    <View style={styles.container}>
+    <View style={styles.container} testID="upload-flow">
       <Text style={styles.title}>Upload antique reel</Text>
       <Text style={styles.status}>{status}</Text>
       <Pressable disabled={busy} style={styles.button} onPress={() => void pickAndUpload()}>

@@ -1,0 +1,22 @@
+appId: host.exp.Exponent
+---
+- launchApp
+- openLink: ${EXPO_DEV_URL}
+- extendedWaitUntil:
+    visible:
+      id: "reels-screen"
+    timeout: 60000
+- assertVisible:
+    id: "reel-video-0"
+- swipe:
+    start: 50%,80%
+    end: 50%,20%
+    duration: 700
+- extendedWaitUntil:
+    visible:
+      id: "reel-video-1"
+    timeout: 15000
+- tapOn:
+    id: "upload-button"
+- assertVisible:
+    id: "upload-flow"

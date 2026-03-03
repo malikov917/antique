@@ -5,6 +5,7 @@
   "scripts": {
     "check": "./scripts/check.sh",
     "ensure:local": "./scripts/ensure-local.sh",
+    "ensure:happy-path": "./scripts/ensure-mobile-happy-path.sh",
     "lint": "pnpm -r lint",
     "typecheck": "pnpm --filter @antique/types exec tsc -b tsconfig.json --force && pnpm --filter @antique/mobile typecheck && tsc -b",
     "test": "pnpm -r test",
