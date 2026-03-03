@@ -15,7 +15,15 @@ import Animated, {
 
 const { height, width } = Dimensions.get("window");
 
-export function ReelItem({ item, active }: { item: ReelPlayableItem; active: boolean }) {
+export function ReelItem({
+  item,
+  active,
+  itemIndex
+}: {
+  item: ReelPlayableItem;
+  active: boolean;
+  itemIndex: number;
+}) {
   const player = useVideoPlayer(item.streamUrl, (createdPlayer) => {
     createdPlayer.loop = true;
     if (active) {
@@ -55,10 +63,15 @@ export function ReelItem({ item, active }: { item: ReelPlayableItem; active: boo
   }));
 
   return (
-    <View style={styles.wrapper}>
+    <View style={styles.wrapper} testID={`reel-item-${itemIndex}`}>
       <GestureDetector gesture={tap}>
         <View style={styles.videoContainer}>
-          <VideoView style={styles.video} player={player} contentFit="cover" />
+          <VideoView
+            style={styles.video}
+            player={player}
+            contentFit="cover"
+            testID={`reel-video-${itemIndex}`}
+          />
           <Animated.View style={[styles.heart, animatedHeartStyle]}>
             <Text style={styles.heartText}>❤</Text>
           </Animated.View>

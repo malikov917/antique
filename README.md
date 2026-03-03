@@ -9,14 +9,16 @@ Agent-first monorepo for a cross-platform reels-style antique marketplace MVP.
 - Delivery tracking: Linear (`Antique` team)
 
 ## Quick Start
-1. Copy environment values:
+1. Define product intent in:
+   - `PRODUCT.md`
+2. Copy environment values:
    - `cp .env.example apps/api/.env`
    - `cp .env.example apps/mobile/.env`
-2. Install dependencies:
+3. Install dependencies:
    - `pnpm install`
-3. Run API:
+4. Run API:
    - `pnpm dev:api`
-4. Run mobile app:
+5. Run mobile app:
    - `pnpm dev:mobile`
 
 ## Quality Gates
@@ -35,6 +37,22 @@ Agent-first monorepo for a cross-platform reels-style antique marketplace MVP.
 - Optional environment variables:
   - `API_PORT` (default `4000`)
   - `MOBILE_PORT` (default `8081`)
+
+## Mobile Happy-Path Smoke (Gesture + UI)
+- `pnpm ensure:happy-path`
+- What it validates on iOS simulator (via Maestro):
+  - app opens into reels screen,
+  - first reel video container is visible,
+  - swipe up advances to next reel,
+  - upload sheet opens from `Upload` button.
+- Prerequisites:
+  - iOS simulator booted,
+  - Expo Go installed in simulator (`host.exp.Exponent`),
+  - Maestro installed locally.
+- Optional overrides:
+  - `EXPO_DEV_URL` (default `exp://127.0.0.1:8081`)
+  - `MAESTRO_FLOW_PATH` (default `e2e/maestro/ios-reels-happy-path.yaml`)
+  - `SKIP_CHECK=1` to skip lint/typecheck/test when iterating locally.
 
 ## Repository Layout
 - `apps/mobile`: Expo app with reels feed and upload flow

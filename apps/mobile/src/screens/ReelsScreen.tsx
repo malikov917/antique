@@ -25,14 +25,14 @@ export function ReelsScreen() {
 
   const renderItem = useCallback(
     ({ item, index }: { item: (typeof items)[number]; index: number }) => (
-      <ReelItem item={item} active={index === activeIndex} />
+      <ReelItem item={item} active={index === activeIndex} itemIndex={index} />
     ),
     [activeIndex, items]
   );
 
   if (loading) {
     return (
-      <View style={styles.centered}>
+      <View style={styles.centered} testID="reels-screen-loading">
         <ActivityIndicator color="#ffffff" />
         <Text style={styles.metaText}>Loading reels...</Text>
       </View>
@@ -40,7 +40,7 @@ export function ReelsScreen() {
   }
 
   return (
-    <View style={styles.root}>
+    <View style={styles.root} testID="reels-screen">
       <FlashList
         data={items}
         renderItem={renderItem}
@@ -51,11 +51,12 @@ export function ReelsScreen() {
         onViewableItemsChanged={onViewableItemsChanged.current}
         viewabilityConfig={{ itemVisiblePercentThreshold: 80 }}
         keyExtractor={(item) => item.id}
+        testID="reels-feed"
       />
       <View style={styles.topMeta}>
         <Text style={styles.metaText}>{error ? `Offline fallback: ${error}` : "Live feed"}</Text>
       </View>
-      <Pressable style={styles.uploadButton} onPress={() => setUploadOpen(true)}>
+      <Pressable testID="upload-button" style={styles.uploadButton} onPress={() => setUploadOpen(true)}>
         <Text style={styles.uploadButtonText}>Upload</Text>
       </Pressable>
       <Modal
@@ -65,7 +66,7 @@ export function ReelsScreen() {
         onRequestClose={() => setUploadOpen(false)}
       >
         <Pressable style={styles.modalOverlay} onPress={() => setUploadOpen(false)}>
-          <Pressable style={styles.sheet} onPress={(event) => event.stopPropagation()}>
+          <Pressable testID="upload-sheet" style={styles.sheet} onPress={(event) => event.stopPropagation()}>
             <UploadFlow onDone={() => setUploadOpen(false)} />
           </Pressable>
         </Pressable>
