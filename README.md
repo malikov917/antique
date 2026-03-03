@@ -54,6 +54,27 @@ Agent-first monorepo for a cross-platform reels-style antique marketplace MVP.
   - `MAESTRO_FLOW_PATH` (default `e2e/maestro/ios-reels-happy-path.yaml`)
   - `SKIP_CHECK=1` to skip lint/typecheck/test when iterating locally.
 
+## Android Happy-Path Smoke (Gesture + UI)
+- `pnpm ensure:happy-path:android`
+- What it validates on Android emulator/device (via Maestro):
+  - app opens into reels screen,
+  - first reel video container is visible,
+  - swipe up advances to next reel,
+  - upload sheet opens from `Upload` button.
+- Prerequisites:
+  - Android device/emulator connected (`adb devices` shows `device`),
+  - Expo Go installed on device/emulator (`host.exp.exponent`),
+  - Maestro installed locally.
+- Optional overrides:
+  - `ANDROID_DEVICE_ID` to force a specific adb device
+  - `ANDROID_AVD_NAME` to auto-start an emulator when none is running
+  - `EXPO_DEV_URL` (default `exp://10.0.2.2:8081`)
+  - `MAESTRO_FLOW_PATH` (default `e2e/maestro/android-reels-happy-path.yaml`)
+  - `SKIP_CHECK=1` to skip lint/typecheck/test when iterating locally.
+
+## Both Platforms Happy-Path
+- `pnpm ensure:happy-path:all`
+
 ## Repository Layout
 - `apps/mobile`: Expo app with reels feed and upload flow
 - `apps/api`: Fastify API (`/v1/uploads`, `/v1/feed`, `/v1/webhooks/mux`)

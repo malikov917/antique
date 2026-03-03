@@ -6,6 +6,8 @@
     "check": "./scripts/check.sh",
     "ensure:local": "./scripts/ensure-local.sh",
     "ensure:happy-path": "./scripts/ensure-mobile-happy-path.sh",
+    "ensure:happy-path:android": "./scripts/ensure-mobile-happy-path-android.sh",
+    "ensure:happy-path:all": "pnpm ensure:happy-path && SKIP_CHECK=1 pnpm ensure:happy-path:android",
     "lint": "pnpm -r lint",
     "typecheck": "pnpm --filter @antique/types exec tsc -b tsconfig.json --force && pnpm --filter @antique/mobile typecheck && tsc -b",
     "test": "pnpm -r test",
