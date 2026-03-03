@@ -1,0 +1,125 @@
+import { useCallback, useRef, useState } from "react";
+import { ActivityIndicator, Dimensions, Modal, Pressable, StyleSheet, Text, View, type ViewToken } from "react-native";
+import { FlashList } from "@shopify/flash-list";
+import { ReelItem } from "../components/ReelItem";
+import { UploadFlow } from "../components/UploadFlow";
+import { useReelsFeed } from "../hooks/useReelsFeed";
+import { useVideoPrefetch } from "../hooks/useVideoPrefetch";
+
+const { height } = Dimensions.get("window");
+
+export function ReelsScreen() {
+  const [activeIndex, setActiveIndex] = useState(0);
+  const [uploadOpen, setUploadOpen] = useState(false);
+  const { items, loading, error } = useReelsFeed();
+  useVideoPrefetch(items, activeIndex);
+
+  const onViewableItemsChanged = useRef(
+    ({ viewableItems }: { viewableItems: Array<ViewToken> }) => {
+      const candidate = viewableItems.find((entry) => (entry.index ?? -1) >= 0);
+      if (typeof candidate?.index === "number") {
+        setActiveIndex(candidate.index);
+      }
+    }
+  );
+
+  const renderItem = useCallback(
+    ({ item, index }: { item: (typeof items)[number]; index: number }) => (
+      <ReelItem item={item} active={index === activeIndex} />
+    ),
+    [activeIndex, items]
+  );
+
+  if (loading) {
+    return (
+      <View style={styles.centered}>
+        <ActivityIndicator color="#ffffff" />
+        <Text style={styles.metaText}>Loading reels...</Text>
+      </View>
+    );
+  }
+
+  return (
+    <View style={styles.root}>
+      <FlashList
+        data={items}
+        renderItem={renderItem}
+        pagingEnabled
+        snapToInterval={height}
+        decelerationRate="fast"
+        showsVerticalScrollIndicator={false}
+        onViewableItemsChanged={onViewableItemsChanged.current}
+        viewabilityConfig={{ itemVisiblePercentThreshold: 80 }}
+        keyExtractor={(item) => item.id}
+      />
+      <View style={styles.topMeta}>
+        <Text style={styles.metaText}>{error ? `Offline fallback: ${error}` : "Live feed"}</Text>
+      </View>
+      <Pressable style={styles.uploadButton} onPress={() => setUploadOpen(true)}>
+        <Text style={styles.uploadButtonText}>Upload</Text>
+      </Pressable>
+      <Modal
+        animationType="slide"
+        transparent
+        visible={uploadOpen}
+        onRequestClose={() => setUploadOpen(false)}
+      >
+        <Pressable style={styles.modalOverlay} onPress={() => setUploadOpen(false)}>
+          <Pressable style={styles.sheet} onPress={(event) => event.stopPropagation()}>
+            <UploadFlow onDone={() => setUploadOpen(false)} />
+          </Pressable>
+        </Pressable>
+      </Modal>
+    </View>
+  );
+}
+
+const styles = StyleSheet.create({
+  root: {
+    flex: 1,
+    backgroundColor: "#050505"
+  },
+  centered: {
+    flex: 1,
+    backgroundColor: "#050505",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 10
+  },
+  topMeta: {
+    position: "absolute",
+    top: 60,
+    alignSelf: "center",
+    backgroundColor: "rgba(0,0,0,0.35)",
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 999
+  },
+  metaText: {
+    color: "#ececec"
+  },
+  uploadButton: {
+    position: "absolute",
+    right: 20,
+    bottom: 44,
+    backgroundColor: "#f8f8f8",
+    borderRadius: 999,
+    paddingHorizontal: 20,
+    paddingVertical: 12
+  },
+  uploadButtonText: {
+    color: "#111111",
+    fontWeight: "700"
+  },
+  modalOverlay: {
+    flex: 1,
+    justifyContent: "flex-end",
+    backgroundColor: "rgba(0,0,0,0.45)"
+  },
+  sheet: {
+    backgroundColor: "#151515",
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+    paddingBottom: 24
+  }
+});

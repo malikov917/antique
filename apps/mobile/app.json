@@ -1,0 +1,35 @@
+{
+  "expo": {
+    "name": "Antique",
+    "slug": "antique",
+    "scheme": "antique",
+    "version": "0.1.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "splash": {
+      "image": "./assets/splash-icon.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#111111"
+    },
+    "updates": {
+      "fallbackToCacheTimeout": 0
+    },
+    "assetBundlePatterns": ["**/*"],
+    "ios": {
+      "supportsTablet": false,
+      "bundleIdentifier": "com.antique.app"
+    },
+    "android": {
+      "package": "com.antique.app",
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#111111"
+      }
+    },
+    "plugins": ["expo-router", "expo-video", "expo-image-picker"],
+    "experiments": {
+      "typedRoutes": true
+    }
+  }
+}
+

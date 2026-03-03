@@ -1,0 +1,44 @@
+# Antique Agent Operating System
+
+## Mission
+Build and ship a fast, agent-driven mobile marketplace for antique video reels on iOS and Android.
+
+## Non-Negotiable Workflow
+1. Linear is the source of truth for product work.
+2. Every implementation change maps to a Linear issue before code starts.
+3. Branch format is `codex/<issue-key>-<short-slug>`.
+4. Every PR must reference its Linear issue and include the acceptance checklist.
+5. Only move issue state to `In Review` after local validation passes.
+
+## Required Validation Before `In Review`
+Run from repository root:
+- `pnpm lint`
+- `pnpm typecheck`
+- `pnpm test`
+
+Attach output summary in the Linear issue comment.
+
+## Skill-First Policy
+- Prefer existing skills before inventing ad-hoc workflows.
+- Add a new project skill only when the same workflow repeats two or more times.
+- Use local skills in `.agents/skills` for:
+  - delivery orchestration with Linear updates
+  - reels performance and animation quality checks
+  - Mux upload/webhook state transitions
+  - release build and store submission gating
+
+## Linear Update Cadence
+- Update active issues at least once per working day.
+- Use this comment template:
+  - `Status:`
+  - `What changed today:`
+  - `Blockers:`
+  - `Next action:`
+  - `ETA:`
+
+## Engineering Defaults
+- Keep API backward-compatible for `/v1/*` unless issue explicitly allows breaking changes.
+- Prefer typed interfaces in `packages/types`.
+- Keep MVP intentionally simple: no DB/auth until explicitly planned.
+- Track performance-sensitive work with the `perf` label.
+
