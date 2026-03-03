@@ -4,6 +4,11 @@
 - Flow file: `e2e/maestro/ios-reels-happy-path.yaml`
 - Runner: `pnpm ensure:happy-path`
 
+## Android Happy Path
+- Flow file: `e2e/maestro/android-reels-happy-path.yaml`
+- Runner: `pnpm ensure:happy-path:android`
+- Optional auto-boot: set `ANDROID_AVD_NAME=<your-avd-name>` to let the script start an emulator.
+
 ## Covered Steps
 1. Launch Expo Go.
 2. Open current Metro dev URL.

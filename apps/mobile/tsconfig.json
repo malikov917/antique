@@ -4,9 +4,18 @@
     "strict": true,
     "baseUrl": ".",
     "paths": {
-      "@/*": ["./src/*"],
-      "@antique/types": ["../../packages/types/src/index.ts"]
+      "@/*": [
+        "./src/*"
+      ],
+      "@antique/types": [
+        "../../packages/types/src/index.ts"
+      ]
     }
   },
-  "include": ["app", "src", "expo-env.d.ts"]
+  "include": [
+    "app",
+    "src",
+    "expo-env.d.ts",
+    ".expo/types/**/*.ts"
+  ]
 }

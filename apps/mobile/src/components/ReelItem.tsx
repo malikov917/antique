@@ -1,6 +1,7 @@
-import { useEffect } from "react";
+import { useEffect, useMemo } from "react";
 import { Dimensions, StyleSheet, Text, View } from "react-native";
-import { VideoView, useVideoPlayer } from "expo-video";
+import { VideoView, type VideoPlayer } from "expo-video";
+import NativeVideoModule from "expo-video/build/NativeVideoModule";
 import type { ReelPlayableItem } from "../hooks/useReelsFeed";
 import { Gesture, GestureDetector } from "react-native-gesture-handler";
 import Animated, {
@@ -24,16 +25,12 @@ export function ReelItem({
   active: boolean;
   itemIndex: number;
 }) {
-  const player = useVideoPlayer(item.streamUrl, (createdPlayer) => {
-    createdPlayer.loop = true;
-    if (active) {
-      createdPlayer.play();
-    }
-  });
+  const player = useCompatVideoPlayer(item.streamUrl);
   const heartScale = useSharedValue(0);
   const heartOpacity = useSharedValue(0);
 
   useEffect(() => {
+    player.loop = true;
     if (active) {
       player.play();
     } else {
@@ -83,6 +80,20 @@ export function ReelItem({
       </GestureDetector>
     </View>
   );
+}
+
+function useCompatVideoPlayer(streamUrl: string): VideoPlayer {
+  const player = useMemo(() => {
+    return new NativeVideoModule.VideoPlayer({ uri: streamUrl }, false) as VideoPlayer;
+  }, [streamUrl]);
+
+  useEffect(() => {
+    return () => {
+      (player as { release?: () => void }).release?.();
+    };
+  }, [player]);
+
+  return player;
 }
 
 const styles = StyleSheet.create({

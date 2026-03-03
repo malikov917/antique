@@ -8,6 +8,7 @@ MOBILE_START_TIMEOUT_SECONDS="${MOBILE_START_TIMEOUT_SECONDS:-45}"
 EXPO_DEV_URL="${EXPO_DEV_URL:-exp://127.0.0.1:${MOBILE_PORT}}"
 MAESTRO_FLOW_PATH="${MAESTRO_FLOW_PATH:-e2e/maestro/ios-reels-happy-path.yaml}"
 DEMO_PLAYBACK_IDS="${DEMO_PLAYBACK_IDS:-DS00Spx1CV902zP2Yw6xh38GQ01CV5WfBvXMUdr74j4,2B8I3G67hQb5mZy00f1VGfU0202YFWLE9x1xn89J9xk}"
+IOS_DEVICE_ID="${IOS_DEVICE_ID:-}"
 
 API_PID=""
 MOBILE_PID=""
@@ -89,6 +90,15 @@ if ! xcrun simctl list devices booted | grep -q "(Booted)"; then
   exit 1
 fi
 
+if [[ -z "$IOS_DEVICE_ID" ]]; then
+  IOS_DEVICE_ID="$(xcrun simctl list devices booted | awk -F '[()]' '/iPhone/ && /\(Booted\)/ { print $2; exit }')"
+fi
+
+if [[ -z "$IOS_DEVICE_ID" ]]; then
+  echo "[ensure-mobile-happy-path] could not resolve a booted iPhone simulator UDID"
+  exit 1
+fi
+
 if [[ "${SKIP_CHECK:-0}" != "1" ]]; then
   echo "[ensure-mobile-happy-path] lint/typecheck/test"
   pnpm check
@@ -106,7 +116,7 @@ if ! wait_for_url "http://127.0.0.1:${API_PORT}/health" "$API_START_TIMEOUT_SECO
 fi
 
 echo "[ensure-mobile-happy-path] start metro"
-EXPO_NO_TELEMETRY=1 CI=1 pnpm --filter @antique/mobile exec expo start --offline --port "$MOBILE_PORT" >"$MOBILE_LOG_FILE" 2>&1 &
+EXPO_PUBLIC_API_BASE_URL="http://127.0.0.1:${API_PORT}" EXPO_NO_TELEMETRY=1 CI=1 pnpm --filter @antique/mobile exec expo start --offline --port "$MOBILE_PORT" >"$MOBILE_LOG_FILE" 2>&1 &
 MOBILE_PID=$!
 if ! wait_for_url "http://127.0.0.1:${MOBILE_PORT}/status" "$MOBILE_START_TIMEOUT_SECONDS" "$MOBILE_PID" "mobile"; then
   print_log_tail "mobile" "$MOBILE_LOG_FILE"
@@ -114,6 +124,6 @@ if ! wait_for_url "http://127.0.0.1:${MOBILE_PORT}/status" "$MOBILE_START_TIMEOU
 fi
 
 echo "[ensure-mobile-happy-path] run maestro flow"
-maestro test "$MAESTRO_FLOW_PATH" -e EXPO_DEV_URL="$EXPO_DEV_URL"
+maestro test "$MAESTRO_FLOW_PATH" --device "$IOS_DEVICE_ID" -e EXPO_DEV_URL="$EXPO_DEV_URL"
 
 echo "[ensure-mobile-happy-path] all green"
