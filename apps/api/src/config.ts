@@ -37,6 +37,15 @@ function findApiRoot(): string {
   return resolve(moduleDir, "..", "..");
 }
 
+function resolveEnvCandidates(apiRoot: string): string[] {
+  return [
+    join(process.cwd(), "apps/api/.env"),
+    join(process.cwd(), ".env"),
+    join(apiRoot, ".env"),
+    join(apiRoot, "..", ".env")
+  ].map((candidate) => resolve(candidate));
+}
+
 function parseAndApplyEnvFile(filePath: string): void {
   if (!existsSync(filePath)) {
     return;
@@ -70,18 +79,14 @@ function loadLocalApiEnvFile(): void {
   }
   localEnvLoaded = true;
   const apiRoot = findApiRoot();
-  const candidatePaths = [
-    join(process.cwd(), "apps/api/.env"),
-    join(process.cwd(), ".env"),
-    join(apiRoot, ".env")
-  ];
+  const candidatePaths = resolveEnvCandidates(apiRoot);
   const seen = new Set<string>();
-  for (const path of candidatePaths) {
-    if (seen.has(path)) {
+  for (const candidatePath of candidatePaths) {
+    if (seen.has(candidatePath)) {
       continue;
     }
-    seen.add(path);
-    parseAndApplyEnvFile(path);
+    seen.add(candidatePath);
+    parseAndApplyEnvFile(candidatePath);
   }
 }
 

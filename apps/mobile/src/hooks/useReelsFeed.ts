@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import type { FeedResponse, VideoFeedItem } from "@antique/types";
 
 const FALLBACK_PLAYBACK_IDS = ["DS00Spx1CV902zP2Yw6xh38GQ01CV5WfBvXMUdr74j4"];
@@ -33,6 +33,11 @@ export function useReelsFeed() {
   const [items, setItems] = useState<ReelPlayableItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [refreshNonce, setRefreshNonce] = useState(0);
+
+  const refresh = useCallback(() => {
+    setRefreshNonce((current) => current + 1);
+  }, []);
 
   useEffect(() => {
     const abortController = new AbortController();
@@ -63,14 +68,15 @@ export function useReelsFeed() {
     };
     void fetchFeed();
     return () => abortController.abort();
-  }, []);
+  }, [refreshNonce]);
 
   return useMemo(
     () => ({
       items,
       loading,
-      error
+      error,
+      refresh
     }),
-    [error, items, loading]
+    [error, items, loading, refresh]
   );
 }

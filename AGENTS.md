@@ -28,6 +28,11 @@ Attach output summary in the Linear issue comment.
 - Android scripts must resolve `adb`/`emulator` via `ANDROID_SDK_ROOT` fallback, not PATH-only assumptions.
 - During fix iteration, run `SKIP_CHECK=1` e2e loops after a full gate pass; keep final reporting based on a full validation run.
 
+## Local App Run Reliability
+- For iOS manual testing, boot simulator first (`xcrun simctl boot "<device>"` + `xcrun simctl bootstatus -b`) and then launch Simulator.
+- Start backend and mobile dev servers in separate long-lived terminals so API and Expo logs stay visible during manual testing.
+- If upload endpoints return `503` locally, verify Mux credentials are loaded from `apps/api/.env` or repository root `.env` before retrying.
+
 ## Continuous Improvement Rule
 - After each ticket, keep only 1-3 durable lessons in this file (remove stale/redundant ones).
 - Prefer workflow-level learnings (tooling, validation, reproducibility) over one-off incident details.

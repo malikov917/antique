@@ -11,7 +11,7 @@ const { height } = Dimensions.get("window");
 export function ReelsScreen() {
   const [activeIndex, setActiveIndex] = useState(0);
   const [uploadOpen, setUploadOpen] = useState(false);
-  const { items, loading, error } = useReelsFeed();
+  const { items, loading, error, refresh } = useReelsFeed();
   useVideoPrefetch(items, activeIndex);
 
   const onViewableItemsChanged = useRef(
@@ -67,7 +67,12 @@ export function ReelsScreen() {
       >
         <Pressable style={styles.modalOverlay} onPress={() => setUploadOpen(false)}>
           <Pressable testID="upload-sheet" style={styles.sheet} onPress={(event) => event.stopPropagation()}>
-            <UploadFlow onDone={() => setUploadOpen(false)} />
+            <UploadFlow
+              onDone={() => {
+                setUploadOpen(false);
+                refresh();
+              }}
+            />
           </Pressable>
         </Pressable>
       </Modal>

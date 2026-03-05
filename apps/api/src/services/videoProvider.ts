@@ -111,12 +111,15 @@ export class MuxVideoService {
     }
   }
 
-  async createDirectUpload(): Promise<DirectUpload> {
-    this.ensureConfigured();
-    const mux = this.mux;
-    if (!mux) {
+  private getMuxClient(): MuxClient {
+    if (!this.mux) {
       throw new MissingMuxCredentialsError();
     }
+    return this.mux;
+  }
+
+  async createDirectUpload(): Promise<DirectUpload> {
+    const mux = this.getMuxClient();
     const upload = (await mux.video.uploads.create({
       cors_origin: "*",
       new_asset_settings: {
@@ -134,11 +137,7 @@ export class MuxVideoService {
   }
 
   async retrieveUpload(uploadId: string): Promise<UploadLookup> {
-    this.ensureConfigured();
-    const mux = this.mux;
-    if (!mux) {
-      throw new MissingMuxCredentialsError();
-    }
+    const mux = this.getMuxClient();
     const upload = (await mux.video.uploads.retrieve(uploadId)) as MuxUploadResponse;
     const assetId = upload.asset_id ? String(upload.asset_id) : undefined;
     if (!assetId) {
@@ -155,11 +154,7 @@ export class MuxVideoService {
   }
 
   async retrieveAsset(assetId: string): Promise<AssetLookup> {
-    this.ensureConfigured();
-    const mux = this.mux;
-    if (!mux) {
-      throw new MissingMuxCredentialsError();
-    }
+    const mux = this.getMuxClient();
     const asset = (await mux.video.assets.retrieve(assetId)) as MuxAssetResponse;
     const playbackId = Array.isArray(asset.playback_ids)
       ? asset.playback_ids[0]?.id
