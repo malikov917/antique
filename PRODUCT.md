@@ -22,8 +22,9 @@ Core principles:
 | --- | --- | --- | --- |
 | Reels feed playback | Done | 2026-03-05 | ANT-26 |
 | Gallery video upload + Mux processing | Done | 2026-03-05 | ANT-26 |
-| Identity + auth (OTP, sessions, role claims) | Planned (P1) | 2026-03-05 | TBD |
-| Seller onboarding/approval | Planned (P1) | 2026-03-05 | TBD |
+| Identity + auth (OTP, sessions, role claims) | Done | 2026-03-05 | ANT-28 |
+| `me` profile + role switch + auth route guards | Planned (P1) | 2026-03-05 | ANT-31 |
+| Seller onboarding/approval | Planned (P1) | 2026-03-05 | ANT-32 |
 | Market day session open/close | Planned (P2) | 2026-03-05 | TBD |
 | Listings + price floor + basket + offers | Planned (P2) | 2026-03-05 | TBD |
 | Manual winner selection + auto-decline others | Planned (P2) | 2026-03-05 | TBD |
@@ -44,16 +45,23 @@ Implemented today:
 2. Upload video from gallery.
 3. API direct upload lifecycle with Mux webhook readiness.
 4. Shared type package (`packages/types`).
+5. Phone OTP auth endpoints:
+1. `POST /v1/auth/otp/request`,
+2. `POST /v1/auth/otp/verify`,
+3. `POST /v1/auth/refresh`,
+4. `POST /v1/auth/logout`.
+6. Access/refresh token session lifecycle with rotation, revoke, and reuse detection.
+7. SQLite-backed auth persistence for users, OTP challenges, sessions, and refresh tokens.
 
 Not implemented yet:
-1. Registration/login and user identity model.
-2. Role claims and role-guarded APIs.
+1. `GET /v1/me`, `PATCH /v1/me`, and `POST /v1/me/role-switch`.
+2. Auth route guards for marketplace endpoints.
 3. Seller onboarding and approval.
 4. Listings metadata and minimum offer logic.
 5. Basket, offers, deal lifecycle, chats.
 6. Notification center and push notifications.
 7. Sold ledger and CSV export.
-8. Persistent database/auth system.
+8. Full app persistence outside auth domain (listings, offers, chats, notifications).
 
 ## 4) Personas and Roles
 
@@ -305,7 +313,7 @@ Add validation constants:
 1. Reels feed and upload pipeline.
 
 ### P1 (identity foundation)
-1. OTP auth and refresh sessions.
+1. OTP auth and refresh sessions. (Done: ANT-28, 2026-03-05)
 2. `me` profile endpoints and role switch.
 3. Seller apply + admin approval flow.
 4. Auth middleware and role guards.
@@ -362,7 +370,7 @@ Delivery gate before moving ticket to `In Review`:
 2. API: Fastify + TypeScript.
 3. Video: Mux direct upload and playback.
 4. Shared contracts: `packages/types`.
-5. Persistence: PostgreSQL + Prisma.
+5. Persistence: SQLite + Drizzle (current); cloud-postgres path can be introduced later when scale requires it.
 6. Auth: OTP provider + JWT access/refresh tokens.
 7. Notifications: Expo push + in-app notification center.
 8. Chat MVP: REST + polling (realtime upgrade later).
