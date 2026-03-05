@@ -1,7 +1,11 @@
 import { useState } from "react";
-import { ActivityIndicator, Pressable, StyleSheet, Text, View } from "react-native";
+import { ActivityIndicator, Platform, Pressable, StyleSheet, Text, View } from "react-native";
+import Constants from "expo-constants";
 import * as ImagePicker from "expo-image-picker";
 import type { CreateUploadResponse, UploadStatusResponse } from "@antique/types";
+import { prepareVideoForUpload, type UploadRuntimeContext } from "../upload/prepareVideo";
+import { logUploadPrepCompleted, logUploadPrepFailed } from "../upload/uploadPrepTelemetry";
+import { runUploadPipeline, type SelectedVideoAsset } from "../upload/uploadPipeline";
 
 const API_BASE_URL = process.env.EXPO_PUBLIC_API_BASE_URL ?? "http://localhost:4000";
 
@@ -11,66 +15,102 @@ export function UploadFlow({ onDone }: { onDone: () => void }) {
 
   const pickAndUpload = async () => {
     setBusy(true);
-    try {
-      const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
-      if (!permission.granted) {
-        setStatus("Media permission denied");
-        return;
-      }
+    const runtime: UploadRuntimeContext = {
+      platform: Platform.OS === "ios" ? "ios" : "android",
+      isExpoGo: Constants.appOwnership === "expo",
+      executionEnvironment: Constants.executionEnvironment ?? null
+    };
 
-      const result = await ImagePicker.launchImageLibraryAsync({
-        mediaTypes: ImagePicker.MediaTypeOptions.Videos,
-        quality: 1
-      });
-      if (result.canceled || result.assets.length === 0) {
-        setStatus("Upload canceled");
-        return;
-      }
-      setStatus("Creating upload session...");
-      const createResponse = await fetch(`${API_BASE_URL}/v1/uploads`, {
-        method: "POST"
-      });
-      if (!createResponse.ok) {
-        throw new Error(`Create upload failed (${createResponse.status})`);
-      }
+    await runUploadPipeline({
+      requestMediaPermission: () => ImagePicker.requestMediaLibraryPermissionsAsync(),
+      pickVideo: async () => {
+        const pickerOptions: ImagePicker.ImagePickerOptions = {
+          mediaTypes: ImagePicker.MediaTypeOptions.Videos,
+          quality: 1
+        };
 
-      const uploadData = (await createResponse.json()) as CreateUploadResponse;
-      setStatus("Uploading video...");
+        if (runtime.platform === "ios" && runtime.isExpoGo) {
+          pickerOptions.videoExportPreset = ImagePicker.VideoExportPreset.H264_1920x1080;
+          pickerOptions.videoQuality = ImagePicker.UIImagePickerControllerQualityType.Medium;
+        }
 
-      const localFile = await fetch(result.assets[0].uri);
-      const blob = await localFile.blob();
-      const uploadResponse = await fetch(uploadData.uploadUrl, {
-        method: "PUT",
-        body: blob
-      });
+        const result = await ImagePicker.launchImageLibraryAsync(pickerOptions);
+        if (result.canceled || result.assets.length === 0) {
+          return null;
+        }
 
-      if (!uploadResponse.ok) {
-        throw new Error(`Upload failed (${uploadResponse.status})`);
-      }
+        const selectedAsset = result.assets[0];
+        if (!selectedAsset) {
+          return null;
+        }
 
-      setStatus("Processing video...");
-      for (let attempt = 0; attempt < 30; attempt++) {
-        const poll = await fetch(`${API_BASE_URL}/v1/uploads/${uploadData.uploadId}`);
+        return {
+          uri: selectedAsset.uri,
+          width: selectedAsset.width,
+          height: selectedAsset.height,
+          duration: selectedAsset.duration,
+          fileSize: selectedAsset.fileSize,
+          mimeType: selectedAsset.mimeType
+        } satisfies SelectedVideoAsset;
+      },
+      prepareVideo: async (asset) => {
+        const startedAtMs = Date.now();
+        try {
+          const prepared = await prepareVideoForUpload({
+            asset: asset as ImagePicker.ImagePickerAsset,
+            runtime
+          });
+          logUploadPrepCompleted({
+            runtime,
+            artifact: prepared
+          });
+          return prepared;
+        } catch (error) {
+          logUploadPrepFailed({
+            runtime,
+            startedAtMs,
+            originalSizeBytes: asset.fileSize ?? undefined,
+            error
+          });
+          throw error;
+        }
+      },
+      createUploadSession: async () => {
+        const createResponse = await fetch(`${API_BASE_URL}/v1/uploads`, {
+          method: "POST"
+        });
+        if (!createResponse.ok) {
+          throw new Error(`Create upload failed (${createResponse.status})`);
+        }
+        return (await createResponse.json()) as CreateUploadResponse;
+      },
+      uploadPreparedVideo: async (uploadUrl, prepared) => {
+        const localFile = await fetch(prepared.preparedUri);
+        const blob = await localFile.blob();
+        const uploadResponse = await fetch(uploadUrl, {
+          method: "PUT",
+          headers: {
+            "Content-Type": prepared.mimeType
+          },
+          body: blob
+        });
+
+        if (!uploadResponse.ok) {
+          throw new Error(`Upload failed (${uploadResponse.status})`);
+        }
+      },
+      pollUploadStatus: async (uploadId) => {
+        const poll = await fetch(`${API_BASE_URL}/v1/uploads/${uploadId}`);
         if (!poll.ok) {
           throw new Error("Status check failed");
         }
-        const body = (await poll.json()) as UploadStatusResponse;
-        if (body.status === "ready") {
-          setStatus("Video ready in feed");
-          onDone();
-          return;
-        }
-        if (body.status === "errored") {
-          throw new Error("Video processing failed");
-        }
-        await new Promise((resolve) => setTimeout(resolve, 1500));
-      }
-      setStatus("Still processing, check back in a moment");
-    } catch (error) {
-      setStatus(error instanceof Error ? error.message : "Upload failed");
-    } finally {
-      setBusy(false);
-    }
+        return (await poll.json()) as UploadStatusResponse;
+      },
+      setStatus,
+      onDone
+    });
+
+    setBusy(false);
   };
 
   return (
