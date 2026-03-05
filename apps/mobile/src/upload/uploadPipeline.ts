@@ -48,7 +48,7 @@ export async function runUploadPipeline(deps: UploadPipelineDeps): Promise<void>
     deps.setStatus("Creating upload session...");
     const uploadSession = await deps.createUploadSession();
 
-    deps.setStatus("Uploading optimized video...");
+    deps.setStatus(preparedVideo.optimizationApplied ? "Uploading optimized video..." : "Uploading video...");
     await deps.uploadPreparedVideo(uploadSession.uploadUrl, preparedVideo);
 
     deps.setStatus("Processing video...");

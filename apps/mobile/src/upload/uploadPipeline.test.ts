@@ -102,4 +102,31 @@ describe("runUploadPipeline", () => {
     ]);
     expect(onDone).toHaveBeenCalledTimes(1);
   });
+
+  it("uses generic upload status when prep artifact is raw", async () => {
+    const onDone = vi.fn();
+    const { deps, statuses } = createDeps({
+      onDone,
+      prepareVideo: async () => ({
+        ...preparedArtifact,
+        optimizationApplied: false
+      }),
+      pollUploadStatus: async () => ({
+        uploadId: "upload-1",
+        status: "ready",
+        playbackId: "abc123"
+      })
+    });
+
+    await runUploadPipeline(deps);
+
+    expect(statuses).toEqual([
+      "Preparing video...",
+      "Creating upload session...",
+      "Uploading video...",
+      "Processing video...",
+      "Video ready in feed"
+    ]);
+    expect(onDone).toHaveBeenCalledTimes(1);
+  });
 });
