@@ -1,6 +1,8 @@
 import { createHmac } from "node:crypto";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { buildServer } from "../src/server.js";
+import { type ApiConfig } from "../src/config.js";
+import { type SmsProvider } from "../src/services/authService.js";
 import { type MuxClient } from "../src/services/videoProvider.js";
 
 function buildMockMuxClient(params?: {
@@ -33,21 +35,53 @@ function buildMockMuxClient(params?: {
   };
 }
 
+function buildTestConfig(overrides?: Partial<ApiConfig>): ApiConfig {
+  return {
+    port: 4000,
+    dbPath: ":memory:",
+    demoPlaybackIds: [],
+    muxWebhookSecret: "whsec_test",
+    muxTokenId: "token-id",
+    muxTokenSecret: "token-secret",
+    muxMaxResolutionTier: "1080p",
+    muxVideoQuality: "plus",
+    authJwtSecret: "jwt-test-secret",
+    authHashSecret: "hash-test-secret",
+    authAccessTokenTtlSec: 15 * 60,
+    authRefreshTokenTtlSec: 30 * 24 * 60 * 60,
+    authOtpTtlSec: 5 * 60,
+    authOtpMaxAttempts: 5,
+    authOtpCooldownSec: 60,
+    authOtpRequestPerPhonePerHour: 5,
+    authOtpRequestPerIpPerHour: 30,
+    authOtpVerifyPerPhoneIpPerHour: 10,
+    ...overrides
+  };
+}
+
+class TestSmsProvider implements SmsProvider {
+  private readonly otpByPhone = new Map<string, string>();
+
+  async sendOtp(params: { phoneE164: string; code: string }): Promise<void> {
+    this.otpByPhone.set(params.phoneE164, params.code);
+  }
+
+  getLastCode(phoneE164: string): string {
+    const code = this.otpByPhone.get(phoneE164);
+    if (!code) {
+      throw new Error(`No OTP code found for ${phoneE164}`);
+    }
+    return code;
+  }
+}
+
 describe("api", () => {
   const secret = "whsec_test";
   let app: Awaited<ReturnType<typeof buildServer>>;
 
   beforeAll(async () => {
     app = await buildServer({
-      config: {
-        port: 4000,
-        demoPlaybackIds: [],
-        muxWebhookSecret: secret,
-        muxTokenId: "token-id",
-        muxTokenSecret: "token-secret",
-        muxMaxResolutionTier: "1080p",
-        muxVideoQuality: "plus"
-      },
+      config: buildTestConfig({ muxWebhookSecret: secret }),
       muxClient: buildMockMuxClient()
     });
   });
@@ -126,15 +160,12 @@ describe("api", () => {
 
   it("does not transition to ready when mux policy is non-compliant", async () => {
     const policyMismatchApp = await buildServer({
-      config: {
+      config: buildTestConfig({
         port: 4010,
-        demoPlaybackIds: [],
         muxWebhookSecret: secret,
-        muxTokenId: "token-id",
-        muxTokenSecret: "token-secret",
         muxMaxResolutionTier: "1080p",
         muxVideoQuality: "plus"
-      },
+      }),
       muxClient: buildMockMuxClient({
         maxResolutionTier: "1440p"
       })
@@ -186,15 +217,12 @@ describe("api", () => {
 
   it("fails fast with 503 on upload routes when mux credentials are missing", async () => {
     const noCredsApp = await buildServer({
-      config: {
+      config: buildTestConfig({
         port: 4012,
-        demoPlaybackIds: [],
         muxWebhookSecret: secret,
         muxTokenId: undefined,
-        muxTokenSecret: undefined,
-        muxMaxResolutionTier: "1080p",
-        muxVideoQuality: "plus"
-      }
+        muxTokenSecret: undefined
+      })
     });
 
     const createResponse = await noCredsApp.inject({
@@ -212,5 +240,326 @@ describe("api", () => {
     expect(lookupResponse.json().error).toContain("Mux credentials");
 
     await noCredsApp.close();
+  });
+});
+
+describe("auth api", () => {
+  it("requests OTP and normalizes phone", async () => {
+    const smsProvider = new TestSmsProvider();
+    const app = await buildServer({
+      config: buildTestConfig(),
+      smsProvider,
+      muxClient: buildMockMuxClient()
+    });
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/v1/auth/otp/request",
+      payload: { phone: "+1 (415) 555-2671" }
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toMatchObject({
+      status: "otp_sent",
+      retryAfterSec: 60
+    });
+    expect(smsProvider.getLastCode("+14155552671")).toMatch(/^\d{6}$/);
+
+    await app.close();
+  });
+
+  it("rejects invalid phone number", async () => {
+    const app = await buildServer({
+      config: buildTestConfig(),
+      smsProvider: new TestSmsProvider(),
+      muxClient: buildMockMuxClient()
+    });
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/v1/auth/otp/request",
+      payload: { phone: "invalid-phone" }
+    });
+
+    expect(response.statusCode).toBe(400);
+    expect(response.json()).toMatchObject({
+      code: "invalid_phone"
+    });
+
+    await app.close();
+  });
+
+  it("rate limits OTP requests by phone", async () => {
+    const smsProvider = new TestSmsProvider();
+    let now = Date.now();
+    const app = await buildServer({
+      config: buildTestConfig({
+        authOtpCooldownSec: 1,
+        authOtpRequestPerPhonePerHour: 2
+      }),
+      smsProvider,
+      muxClient: buildMockMuxClient(),
+      now: () => now
+    });
+
+    const phone = "+1 415 555 2671";
+    const first = await app.inject({
+      method: "POST",
+      url: "/v1/auth/otp/request",
+      payload: { phone }
+    });
+    expect(first.statusCode).toBe(200);
+
+    now += 61_000;
+    const second = await app.inject({
+      method: "POST",
+      url: "/v1/auth/otp/request",
+      payload: { phone }
+    });
+    expect(second.statusCode).toBe(200);
+
+    now += 61_000;
+    const third = await app.inject({
+      method: "POST",
+      url: "/v1/auth/otp/request",
+      payload: { phone }
+    });
+    expect(third.statusCode).toBe(429);
+    expect(third.json()).toMatchObject({
+      code: "otp_request_rate_limited"
+    });
+
+    await app.close();
+  });
+
+  it("verifies OTP and issues session + tokens", async () => {
+    const smsProvider = new TestSmsProvider();
+    const app = await buildServer({
+      config: buildTestConfig(),
+      smsProvider,
+      muxClient: buildMockMuxClient()
+    });
+
+    await app.inject({
+      method: "POST",
+      url: "/v1/auth/otp/request",
+      payload: { phone: "+14155552671" }
+    });
+
+    const code = smsProvider.getLastCode("+14155552671");
+    const verifyResponse = await app.inject({
+      method: "POST",
+      url: "/v1/auth/otp/verify",
+      payload: {
+        phone: "+1 415 555 2671",
+        code,
+        deviceId: "ios-device-1",
+        platform: "ios"
+      }
+    });
+
+    expect(verifyResponse.statusCode).toBe(200);
+    expect(verifyResponse.json()).toMatchObject({
+      isNewUser: true,
+      user: {
+        phone: "+14155552671",
+        activeRole: "buyer"
+      },
+      session: {
+        deviceId: "ios-device-1",
+        platform: "ios"
+      },
+      tokens: {
+        tokenType: "Bearer"
+      }
+    });
+
+    await app.close();
+  });
+
+  it("blocks verification after attempt budget is exhausted", async () => {
+    const smsProvider = new TestSmsProvider();
+    const app = await buildServer({
+      config: buildTestConfig({
+        authOtpMaxAttempts: 1
+      }),
+      smsProvider,
+      muxClient: buildMockMuxClient()
+    });
+
+    await app.inject({
+      method: "POST",
+      url: "/v1/auth/otp/request",
+      payload: { phone: "+14155552671" }
+    });
+    const realCode = smsProvider.getLastCode("+14155552671");
+
+    const first = await app.inject({
+      method: "POST",
+      url: "/v1/auth/otp/verify",
+      payload: {
+        phone: "+14155552671",
+        code: "000000",
+        deviceId: "ios-device-1",
+        platform: "ios"
+      }
+    });
+    expect(first.statusCode).toBe(401);
+    expect(first.json()).toMatchObject({ code: "otp_invalid" });
+
+    const second = await app.inject({
+      method: "POST",
+      url: "/v1/auth/otp/verify",
+      payload: {
+        phone: "+14155552671",
+        code: realCode,
+        deviceId: "ios-device-1",
+        platform: "ios"
+      }
+    });
+    expect(second.statusCode).toBe(401);
+    const secondPayload = second.json() as { code: string };
+    expect(["otp_invalid", "otp_attempts_exceeded"]).toContain(secondPayload.code);
+
+    await app.close();
+  });
+
+  it("rejects expired OTP", async () => {
+    const smsProvider = new TestSmsProvider();
+    let now = Date.now();
+    const app = await buildServer({
+      config: buildTestConfig({
+        authOtpTtlSec: 1
+      }),
+      smsProvider,
+      muxClient: buildMockMuxClient(),
+      now: () => now
+    });
+
+    await app.inject({
+      method: "POST",
+      url: "/v1/auth/otp/request",
+      payload: { phone: "+14155552671" }
+    });
+
+    const code = smsProvider.getLastCode("+14155552671");
+    now += 2_000;
+
+    const verifyResponse = await app.inject({
+      method: "POST",
+      url: "/v1/auth/otp/verify",
+      payload: {
+        phone: "+14155552671",
+        code,
+        deviceId: "ios-device-1",
+        platform: "ios"
+      }
+    });
+
+    expect(verifyResponse.statusCode).toBe(401);
+    expect(verifyResponse.json()).toMatchObject({ code: "otp_expired" });
+
+    await app.close();
+  });
+
+  it("rotates refresh tokens and rejects rotated token", async () => {
+    const smsProvider = new TestSmsProvider();
+    const app = await buildServer({
+      config: buildTestConfig(),
+      smsProvider,
+      muxClient: buildMockMuxClient()
+    });
+
+    await app.inject({
+      method: "POST",
+      url: "/v1/auth/otp/request",
+      payload: { phone: "+14155552671" }
+    });
+
+    const code = smsProvider.getLastCode("+14155552671");
+    const verify = await app.inject({
+      method: "POST",
+      url: "/v1/auth/otp/verify",
+      payload: {
+        phone: "+14155552671",
+        code,
+        deviceId: "android-device-1",
+        platform: "android"
+      }
+    });
+
+    const firstRefreshToken = verify.json().tokens.refreshToken as string;
+
+    const refreshed = await app.inject({
+      method: "POST",
+      url: "/v1/auth/refresh",
+      payload: {
+        refreshToken: firstRefreshToken
+      }
+    });
+    expect(refreshed.statusCode).toBe(200);
+
+    const reused = await app.inject({
+      method: "POST",
+      url: "/v1/auth/refresh",
+      payload: {
+        refreshToken: firstRefreshToken
+      }
+    });
+    expect(reused.statusCode).toBe(401);
+    expect(reused.json()).toMatchObject({ code: "reused_refresh_token" });
+
+    await app.close();
+  });
+
+  it("revokes refresh token on logout", async () => {
+    const smsProvider = new TestSmsProvider();
+    const app = await buildServer({
+      config: buildTestConfig(),
+      smsProvider,
+      muxClient: buildMockMuxClient()
+    });
+
+    await app.inject({
+      method: "POST",
+      url: "/v1/auth/otp/request",
+      payload: { phone: "+14155552671" }
+    });
+
+    const code = smsProvider.getLastCode("+14155552671");
+    const verify = await app.inject({
+      method: "POST",
+      url: "/v1/auth/otp/verify",
+      payload: {
+        phone: "+14155552671",
+        code,
+        deviceId: "ios-device-2",
+        platform: "ios"
+      }
+    });
+
+    const refreshToken = verify.json().tokens.refreshToken as string;
+
+    const logoutResponse = await app.inject({
+      method: "POST",
+      url: "/v1/auth/logout",
+      payload: {
+        refreshToken
+      }
+    });
+    expect(logoutResponse.statusCode).toBe(200);
+    expect(logoutResponse.json()).toMatchObject({ success: true });
+
+    const refreshAfterLogout = await app.inject({
+      method: "POST",
+      url: "/v1/auth/refresh",
+      payload: {
+        refreshToken
+      }
+    });
+    expect(refreshAfterLogout.statusCode).toBe(401);
+    expect(refreshAfterLogout.json()).toMatchObject({ code: "revoked_refresh_token" });
+
+    await app.close();
   });
 });

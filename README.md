@@ -5,6 +5,7 @@ Agent-first monorepo for a cross-platform reels-style antique marketplace MVP.
 ## Stack
 - Mobile: Expo + React Native + TypeScript
 - API: Fastify + Mux direct upload and streaming
+- Auth: Phone OTP + JWT sessions (SQLite)
 - Shared contracts: `packages/types`
 - Delivery tracking: Linear (`Antique` team)
 
@@ -38,10 +39,14 @@ Agent-first monorepo for a cross-platform reels-style antique marketplace MVP.
 - Required for upload routes and real integration test:
   - `MUX_TOKEN_ID`
   - `MUX_TOKEN_SECRET`
+- Required for auth routes (dev defaults exist, override in cloud):
+  - `AUTH_JWT_SECRET`
+  - `AUTH_HASH_SECRET`
 - Optional:
   - `MUX_WEBHOOK_SECRET`
   - `MUX_MAX_RESOLUTION_TIER` (default `1080p`)
   - `MUX_VIDEO_QUALITY` (default `plus`)
+  - `API_DB_PATH` (default `apps/api/data/antique.sqlite`)
 - Upload endpoints fail fast with `503` when token credentials are missing:
   - `POST /v1/uploads`
   - `GET /v1/uploads/:uploadId`
