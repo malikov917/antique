@@ -165,6 +165,7 @@ export async function prepareVideoForUpload(input: PrepareVideoForUploadInput): 
   let preparedDurationSec = normalizeDurationSeconds(toPositiveNumber(input.asset.duration));
   let preparedSizeBytes = originalSizeBytes;
   let optimizationApplied = false;
+  const isIos = input.runtime.platform === "ios";
 
   const shouldSkipNativeTranscode =
     (input.runtime.platform === "android" && input.runtime.isExpoGo) ||
@@ -173,17 +174,25 @@ export async function prepareVideoForUpload(input: PrepareVideoForUploadInput): 
   if (shouldSkipNativeTranscode) {
     optimizationApplied = input.runtime.platform === "ios";
   } else {
-    const compressed = await deps.compressWithNativeModule({
-      uri: input.asset.uri,
-      targetBitrateBps: TARGET_VIDEO_BITRATE_BPS,
-      maxLongEdge: MAX_VIDEO_LONG_EDGE
-    });
-    preparedUri = compressed.uri;
-    preparedWidth = compressed.width ?? preparedWidth;
-    preparedHeight = compressed.height ?? preparedHeight;
-    preparedDurationSec = compressed.durationSec ?? preparedDurationSec;
-    preparedSizeBytes = compressed.sizeBytes ?? (await deps.getFileSizeBytes(preparedUri)) ?? preparedSizeBytes;
-    optimizationApplied = true;
+    try {
+      const compressed = await deps.compressWithNativeModule({
+        uri: input.asset.uri,
+        targetBitrateBps: TARGET_VIDEO_BITRATE_BPS,
+        maxLongEdge: MAX_VIDEO_LONG_EDGE
+      });
+      preparedUri = compressed.uri;
+      preparedWidth = compressed.width ?? preparedWidth;
+      preparedHeight = compressed.height ?? preparedHeight;
+      preparedDurationSec = compressed.durationSec ?? preparedDurationSec;
+      preparedSizeBytes = compressed.sizeBytes ?? (await deps.getFileSizeBytes(preparedUri)) ?? preparedSizeBytes;
+      optimizationApplied = true;
+    } catch (error) {
+      if (!isIos) {
+        throw error;
+      }
+      // iOS must remain testable even if prepare/compress fails: upload raw source.
+      optimizationApplied = false;
+    }
   }
 
   if (!preparedWidth || !preparedHeight || !preparedDurationSec) {
@@ -194,11 +203,13 @@ export async function prepareVideoForUpload(input: PrepareVideoForUploadInput): 
   }
 
   const effectiveBitrateBps = Math.round((preparedSizeBytes * 8) / preparedDurationSec);
-  enforceTargetProfile({
-    width: preparedWidth,
-    height: preparedHeight,
-    effectiveBitrateBps
-  });
+  if (!isIos) {
+    enforceTargetProfile({
+      width: preparedWidth,
+      height: preparedHeight,
+      effectiveBitrateBps
+    });
+  }
 
   return {
     preparedUri,

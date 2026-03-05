@@ -57,6 +57,35 @@ describe("prepareVideoForUpload", () => {
     });
   });
 
+  it("allows non-compliant source on iOS Expo Go for raw testing uploads", async () => {
+    const artifact = await prepareVideoForUpload({
+      asset: {
+        ...baseAsset,
+        width: 3840,
+        height: 2160,
+        fileSize: 20_000_000
+      },
+      runtime: buildRuntime({ platform: "ios", isExpoGo: true })
+    });
+
+    expect(artifact.preparedUri).toBe("file:///video.mp4");
+    expect(artifact.originalSizeBytes).toBe(20_000_000);
+  });
+
+  it("falls back to raw source on iOS when native compression fails", async () => {
+    const artifact = await prepareVideoForUpload({
+      asset: baseAsset,
+      runtime: buildRuntime({ platform: "ios", isExpoGo: false, executionEnvironment: "standalone" }),
+      deps: {
+        compressWithNativeModule: vi.fn().mockRejectedValue(new Error("compress failed"))
+      }
+    });
+
+    expect(artifact.preparedUri).toBe(baseAsset.uri);
+    expect(artifact.optimizationApplied).toBe(false);
+    expect(artifact.optimizedSizeBytes).toBe(baseAsset.fileSize);
+  });
+
   it("uses native compressor on Android non-Expo-Go runtime", async () => {
     const compressWithNativeModule = vi.fn().mockResolvedValue({
       uri: "file:///compressed.mp4",
