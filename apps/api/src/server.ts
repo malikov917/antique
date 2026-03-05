@@ -8,6 +8,7 @@ import { registerUploadRoutes } from "./routes/uploads.js";
 import { registerWebhookRoutes } from "./routes/webhook.js";
 import { registerAuthRoutes } from "./routes/auth.js";
 import { registerSellerRoutes } from "./routes/seller.js";
+import { registerMeRoutes } from "./routes/me.js";
 import { type ApiConfig } from "./config.js";
 import { createDatabaseClient, type DatabaseClient } from "./db/client.js";
 import { initializeDatabase } from "./db/init.js";
@@ -90,6 +91,7 @@ export async function buildServer(params: BuildServerParams): Promise<FastifyIns
     otpRequestIpRateLimitMax: params.config.authOtpRequestPerIpPerHour,
     otpVerifyIpRateLimitMax: params.config.authOtpVerifyPerPhoneIpPerHour
   });
+  await registerMeRoutes(app, { authService });
   await registerSellerRoutes(app, {
     authService,
     sellerApplicationService

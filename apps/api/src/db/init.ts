@@ -5,6 +5,7 @@ export function initializeDatabase(sqlite: Database): void {
     CREATE TABLE IF NOT EXISTS users (
       id TEXT PRIMARY KEY,
       phone_e164 TEXT NOT NULL UNIQUE,
+      display_name TEXT,
       tenant_id TEXT NOT NULL,
       allowed_roles TEXT NOT NULL,
       active_role TEXT NOT NULL,
@@ -78,4 +79,9 @@ export function initializeDatabase(sqlite: Database): void {
 
     CREATE INDEX IF NOT EXISTS idx_seller_applications_status ON seller_applications(status);
   `);
+
+  const userColumns = sqlite.prepare("PRAGMA table_info(users)").all() as Array<{ name: string }>;
+  if (!userColumns.some((column) => column.name === "display_name")) {
+    sqlite.exec("ALTER TABLE users ADD COLUMN display_name TEXT");
+  }
 }

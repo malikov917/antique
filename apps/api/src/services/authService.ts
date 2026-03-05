@@ -11,7 +11,7 @@ import {
   type OtpVerifyResponse,
   type RefreshResponse
 } from "@antique/types";
-import { SignJWT, jwtVerify } from "jose";
+import { SignJWT, jwtVerify, type JWTPayload } from "jose";
 import type { Database } from "better-sqlite3";
 import { AuthError } from "../auth/errors.js";
 import { generateOtpCode, generateToken, hashWithSecret, newId } from "../auth/crypto.js";
@@ -22,6 +22,7 @@ const DEFAULT_TENANT_ID = "default";
 interface UserRow {
   id: string;
   phone_e164: string;
+  display_name: string | null;
   tenant_id: string;
   allowed_roles: string;
   active_role: string;
@@ -102,6 +103,31 @@ export interface LogoutInput {
   refreshToken: string;
 }
 
+export interface AccessTokenClaims {
+  userId: string;
+  tenantId: string;
+  allowedRoles: AuthRole[];
+  activeRole: AuthRole;
+  sellerProfileId: string | null;
+  sessionId: string;
+}
+
+export interface AuthContext {
+  claims: AccessTokenClaims;
+  user: AuthUser;
+  session: AuthSession;
+}
+
+export interface UpdateMeInput {
+  userId: string;
+  displayName?: string | null;
+}
+
+export interface SwitchRoleInput {
+  userId: string;
+  role: AuthRole;
+}
+
 function toIso(timestampMs: number): string {
   return new Date(timestampMs).toISOString();
 }
@@ -119,6 +145,25 @@ function parseAllowedRoles(raw: string): AuthRole[] {
   } catch {
     return ["buyer"];
   }
+}
+
+function isAuthRole(value: unknown): value is AuthRole {
+  return value === "buyer" || value === "seller" || value === "admin";
+}
+
+function parseActiveRole(raw: string): AuthRole {
+  return isAuthRole(raw) ? raw : "buyer";
+}
+
+function normalizeDisplayName(input: string | null): string | null {
+  if (input === null) {
+    return null;
+  }
+  const trimmed = input.trim();
+  if (!trimmed || trimmed.length > 80) {
+    throw new AuthError("invalid_display_name", "Display name must be between 1 and 80 characters", 400);
+  }
+  return trimmed;
 }
 
 function hashIp(ipAddress: string, secret: string): string {
@@ -362,8 +407,17 @@ export class AuthService {
         this.sqlite
           .prepare(
             `
-              INSERT INTO users(id, phone_e164, tenant_id, allowed_roles, active_role, seller_profile_id, created_at)
-              VALUES (?, ?, ?, ?, ?, NULL, ?)
+              INSERT INTO users(
+                id,
+                phone_e164,
+                tenant_id,
+                allowed_roles,
+                active_role,
+                seller_profile_id,
+                display_name,
+                created_at
+              )
+              VALUES (?, ?, ?, ?, ?, NULL, NULL, ?)
             `
           )
           .run(userId, phoneE164, DEFAULT_TENANT_ID, JSON.stringify(["buyer"]), "buyer", now);
@@ -607,40 +661,78 @@ export class AuthService {
     return { success: true };
   }
 
-  async authenticateAccessToken(accessToken: string): Promise<AuthUser> {
-    if (!accessToken) {
-      throw new AuthError("missing_access_token", "Access token is required", 401);
+  async authenticateFromAuthorizationHeader(authorizationHeader: string | undefined): Promise<AuthContext> {
+    if (!authorizationHeader) {
+      throw new AuthError("missing_authorization", "Authorization header is required", 401);
     }
 
-    let payload: Awaited<ReturnType<typeof jwtVerify>>["payload"];
+    const [scheme, token, ...rest] = authorizationHeader.trim().split(/\s+/);
+    if (scheme?.toLowerCase() !== "bearer" || !token || rest.length > 0) {
+      throw new AuthError("invalid_authorization", "Authorization header must use Bearer token", 401);
+    }
+
+    let payload: JWTPayload;
     try {
-      const verified = await jwtVerify(accessToken, this.jwtKey, { algorithms: ["HS256"] });
+      const verified = await jwtVerify(token, this.jwtKey, { algorithms: ["HS256"] });
       payload = verified.payload;
     } catch {
       throw new AuthError("invalid_access_token", "Access token is invalid", 401);
     }
 
-    const userId = typeof payload.userId === "string" ? payload.userId : payload.sub;
-    const sessionId = typeof payload.sessionId === "string" ? payload.sessionId : null;
-    if (typeof userId !== "string" || !sessionId) {
-      throw new AuthError("invalid_access_token", "Access token is invalid", 401);
-    }
-
+    const claims = this.parseAccessTokenClaims(payload);
     const session = this.sqlite
-      .prepare("SELECT id, user_id, revoked_at FROM sessions WHERE id = ? LIMIT 1")
-      .get(sessionId) as Pick<SessionRow, "id" | "user_id" | "revoked_at"> | undefined;
-    if (!session || session.user_id !== userId || session.revoked_at) {
+      .prepare("SELECT * FROM sessions WHERE id = ? LIMIT 1")
+      .get(claims.sessionId) as SessionRow | undefined;
+    if (!session || session.revoked_at) {
       throw new AuthError("revoked_session", "Session is revoked", 401);
     }
-
-    const user = this.sqlite
-      .prepare("SELECT * FROM users WHERE id = ? LIMIT 1")
-      .get(userId) as UserRow | undefined;
-    if (!user) {
+    if (session.user_id !== claims.userId) {
       throw new AuthError("invalid_access_token", "Access token is invalid", 401);
     }
 
-    return this.asAuthUser(user);
+    const user = this.getRequiredUserById(claims.userId);
+    return {
+      claims,
+      user: this.asAuthUser(user),
+      session: this.asAuthSession(session)
+    };
+  }
+
+  getMe(userId: string): AuthUser {
+    return this.asAuthUser(this.getRequiredUserById(userId));
+  }
+
+  updateMe(input: UpdateMeInput): AuthUser {
+    const currentUser = this.getRequiredUserById(input.userId);
+
+    if (input.displayName !== undefined) {
+      this.sqlite
+        .prepare("UPDATE users SET display_name = ? WHERE id = ?")
+        .run(normalizeDisplayName(input.displayName), currentUser.id);
+      return this.asAuthUser(this.getRequiredUserById(currentUser.id));
+    }
+
+    return this.asAuthUser(currentUser);
+  }
+
+  switchRole(input: SwitchRoleInput): AuthUser {
+    const user = this.getRequiredUserById(input.userId);
+    const allowedRoles = parseAllowedRoles(user.allowed_roles);
+    if (!allowedRoles.includes(input.role)) {
+      throw new AuthError("forbidden_role_switch", "Requested role is not allowed for this user", 403);
+    }
+
+    this.sqlite.prepare("UPDATE users SET active_role = ? WHERE id = ?").run(input.role, user.id);
+    return this.asAuthUser(this.getRequiredUserById(user.id));
+  }
+
+  async authenticateAccessToken(accessToken: string): Promise<AuthUser> {
+    if (!accessToken) {
+      throw new AuthError("missing_access_token", "Access token is required", 401);
+    }
+
+    const context = await this.authenticateFromAuthorizationHeader(`Bearer ${accessToken}`);
+    return context.user;
   }
 
   private async createAccessToken(
@@ -655,7 +747,7 @@ export class AuthService {
       userId: user.id,
       tenantId: user.tenant_id,
       allowedRoles,
-      activeRole: user.active_role,
+      activeRole: parseActiveRole(user.active_role),
       sellerProfileId: user.seller_profile_id,
       sessionId: session.id
     })
@@ -675,9 +767,10 @@ export class AuthService {
     return {
       id: user.id,
       phone: user.phone_e164,
+      displayName: user.display_name,
       tenantId: user.tenant_id,
       allowedRoles: parseAllowedRoles(user.allowed_roles),
-      activeRole: (user.active_role as AuthRole) ?? "buyer",
+      activeRole: parseActiveRole(user.active_role),
       sellerProfileId: user.seller_profile_id
     };
   }
@@ -704,5 +797,41 @@ export class AuthService {
       refreshToken: input.refreshToken,
       refreshTokenExpiresAt: toIso(input.refreshTokenExpiresAt)
     };
+  }
+
+  private parseAccessTokenClaims(payload: JWTPayload): AccessTokenClaims {
+    const userId = typeof payload.userId === "string" ? payload.userId : null;
+    const tenantId = typeof payload.tenantId === "string" ? payload.tenantId : null;
+    const sessionId = typeof payload.sessionId === "string" ? payload.sessionId : null;
+    const activeRole = isAuthRole(payload.activeRole) ? payload.activeRole : null;
+    const sellerProfileId =
+      typeof payload.sellerProfileId === "string" ? payload.sellerProfileId : null;
+
+    const allowedRoles = Array.isArray(payload.allowedRoles)
+      ? payload.allowedRoles.filter((entry): entry is AuthRole => isAuthRole(entry))
+      : [];
+
+    if (!userId || !tenantId || !sessionId || !activeRole || allowedRoles.length < 1) {
+      throw new AuthError("invalid_access_token", "Access token is invalid", 401);
+    }
+
+    return {
+      userId,
+      tenantId,
+      allowedRoles,
+      activeRole,
+      sellerProfileId,
+      sessionId
+    };
+  }
+
+  private getRequiredUserById(userId: string): UserRow {
+    const user = this.sqlite.prepare("SELECT * FROM users WHERE id = ? LIMIT 1").get(userId) as
+      | UserRow
+      | undefined;
+    if (!user) {
+      throw new AuthError("invalid_access_token", "Access token is invalid", 401);
+    }
+    return user;
   }
 }

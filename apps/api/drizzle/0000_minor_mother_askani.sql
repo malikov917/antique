@@ -38,6 +38,7 @@ CREATE TABLE `sessions` (
 CREATE TABLE `users` (
 	`id` text PRIMARY KEY NOT NULL,
 	`phone_e164` text NOT NULL,
+	`display_name` text,
 	`tenant_id` text NOT NULL,
 	`allowed_roles` text NOT NULL,
 	`active_role` text NOT NULL,
