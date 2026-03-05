@@ -1,5 +1,15 @@
 import Mux from "@mux/mux-node";
 
+export type MuxMaxResolutionTier = "1080p" | "1440p" | "2160p";
+export type MuxVideoQuality = "basic" | "plus" | "premium";
+export type MuxPlaybackPolicy = "public" | "signed";
+
+export interface MuxAssetPolicy {
+  maxResolutionTier: MuxMaxResolutionTier;
+  videoQuality: MuxVideoQuality;
+  playbackPolicy: MuxPlaybackPolicy[];
+}
+
 export interface DirectUpload {
   uploadId: string;
   uploadUrl: string;
@@ -12,17 +22,27 @@ export interface UploadLookup {
   assetId?: string;
 }
 
+export interface AssetDiagnostics {
+  policyCompliant: boolean;
+  policyIssues: string[];
+  expectedMaxResolutionTier: MuxMaxResolutionTier;
+  actualMaxResolutionTier?: MuxMaxResolutionTier;
+  expectedVideoQuality: MuxVideoQuality;
+  actualVideoQuality?: MuxVideoQuality;
+}
+
 export interface AssetLookup {
   assetId: string;
   status: "preparing" | "ready" | "errored";
   playbackId?: string;
+  diagnostics: AssetDiagnostics;
 }
 
-export interface VideoProvider {
-  createDirectUpload(): Promise<DirectUpload>;
-  retrieveUpload(uploadId: string): Promise<UploadLookup>;
-  retrieveAsset(assetId: string): Promise<AssetLookup>;
-}
+export const DEFAULT_MUX_ASSET_POLICY: MuxAssetPolicy = {
+  maxResolutionTier: "1080p",
+  videoQuality: "plus",
+  playbackPolicy: ["public"]
+};
 
 interface MuxUploadResponse {
   id?: string;
@@ -33,23 +53,76 @@ interface MuxUploadResponse {
 interface MuxAssetResponse {
   status?: string;
   playback_ids?: Array<{ id?: string }>;
+  max_resolution_tier?: MuxMaxResolutionTier;
+  video_quality?: MuxVideoQuality;
 }
 
-class MuxVideoProvider implements VideoProvider {
-  private readonly mux: Mux;
+export interface MuxClient {
+  video: {
+    uploads: {
+      create(input: unknown): Promise<MuxUploadResponse>;
+      retrieve(uploadId: string): Promise<MuxUploadResponse>;
+    };
+    assets: {
+      retrieve(assetId: string): Promise<MuxAssetResponse>;
+      delete(assetId: string): Promise<void>;
+    };
+  };
+}
 
-  constructor(tokenId: string, tokenSecret: string) {
-    this.mux = new Mux({
-      tokenId,
-      tokenSecret
-    });
+export class MissingMuxCredentialsError extends Error {
+  constructor() {
+    super("Mux credentials are required for upload routes");
+    this.name = "MissingMuxCredentialsError";
+  }
+}
+
+export interface MuxVideoServiceConfig {
+  muxTokenId?: string;
+  muxTokenSecret?: string;
+  muxAssetPolicy: MuxAssetPolicy;
+}
+
+export class MuxVideoService {
+  private readonly mux?: MuxClient;
+  private readonly assetPolicy: MuxAssetPolicy;
+
+  constructor(config: MuxVideoServiceConfig, muxClient?: MuxClient) {
+    this.assetPolicy = config.muxAssetPolicy;
+    if (muxClient) {
+      this.mux = muxClient;
+      return;
+    }
+    if (config.muxTokenId && config.muxTokenSecret) {
+      this.mux = new Mux({
+        tokenId: config.muxTokenId,
+        tokenSecret: config.muxTokenSecret
+      });
+    }
+  }
+
+  isConfigured(): boolean {
+    return Boolean(this.mux);
+  }
+
+  ensureConfigured(): void {
+    if (!this.mux) {
+      throw new MissingMuxCredentialsError();
+    }
   }
 
   async createDirectUpload(): Promise<DirectUpload> {
-    const upload = (await this.mux.video.uploads.create({
+    this.ensureConfigured();
+    const mux = this.mux;
+    if (!mux) {
+      throw new MissingMuxCredentialsError();
+    }
+    const upload = (await mux.video.uploads.create({
       cors_origin: "*",
       new_asset_settings: {
-        playback_policy: ["public"]
+        playback_policy: this.assetPolicy.playbackPolicy,
+        max_resolution_tier: this.assetPolicy.maxResolutionTier,
+        video_quality: this.assetPolicy.videoQuality
       }
     })) as MuxUploadResponse;
 
@@ -61,7 +134,12 @@ class MuxVideoProvider implements VideoProvider {
   }
 
   async retrieveUpload(uploadId: string): Promise<UploadLookup> {
-    const upload = (await this.mux.video.uploads.retrieve(uploadId)) as MuxUploadResponse;
+    this.ensureConfigured();
+    const mux = this.mux;
+    if (!mux) {
+      throw new MissingMuxCredentialsError();
+    }
+    const upload = (await mux.video.uploads.retrieve(uploadId)) as MuxUploadResponse;
     const assetId = upload.asset_id ? String(upload.asset_id) : undefined;
     if (!assetId) {
       return {
@@ -77,79 +155,66 @@ class MuxVideoProvider implements VideoProvider {
   }
 
   async retrieveAsset(assetId: string): Promise<AssetLookup> {
-    const asset = (await this.mux.video.assets.retrieve(assetId)) as MuxAssetResponse;
+    this.ensureConfigured();
+    const mux = this.mux;
+    if (!mux) {
+      throw new MissingMuxCredentialsError();
+    }
+    const asset = (await mux.video.assets.retrieve(assetId)) as MuxAssetResponse;
     const playbackId = Array.isArray(asset.playback_ids)
       ? asset.playback_ids[0]?.id
       : undefined;
     const rawStatus = String(asset.status ?? "preparing");
+    const diagnostics = this.evaluateAssetPolicy(asset);
+    const isPolicyCompliant = diagnostics.policyCompliant;
     return {
       assetId,
       playbackId: playbackId ? String(playbackId) : undefined,
+      diagnostics,
       status:
-        rawStatus === "ready"
+        rawStatus === "ready" && isPolicyCompliant
           ? "ready"
-          : rawStatus === "errored"
+          : rawStatus === "errored" || (rawStatus === "ready" && !isPolicyCompliant)
             ? "errored"
             : "preparing"
     };
   }
-}
 
-class MockVideoProvider implements VideoProvider {
-  private readonly uploads = new Map<string, { createdAt: number; assetId?: string }>();
-  private readonly demoPlaybackIds: string[];
-  private sequence = 0;
-
-  constructor(demoPlaybackIds: string[]) {
-    this.demoPlaybackIds = demoPlaybackIds;
+  async deleteAsset(assetId: string): Promise<void> {
+    if (!this.mux) {
+      return;
+    }
+    await this.mux.video.assets.delete(assetId);
   }
 
-  async createDirectUpload(): Promise<DirectUpload> {
-    const uploadId = `mock-upload-${++this.sequence}`;
-    this.uploads.set(uploadId, { createdAt: Date.now() });
+  private evaluateAssetPolicy(asset: MuxAssetResponse): AssetDiagnostics {
+    const policyIssues: string[] = [];
+    const actualMaxResolutionTier = asset.max_resolution_tier;
+    const actualVideoQuality = asset.video_quality;
+
+    if (!actualMaxResolutionTier) {
+      policyIssues.push("Missing max_resolution_tier on Mux asset response");
+    } else if (actualMaxResolutionTier !== this.assetPolicy.maxResolutionTier) {
+      policyIssues.push(
+        `Expected max_resolution_tier=${this.assetPolicy.maxResolutionTier}, got ${actualMaxResolutionTier}`
+      );
+    }
+
+    if (!actualVideoQuality) {
+      policyIssues.push("Missing video_quality on Mux asset response");
+    } else if (actualVideoQuality !== this.assetPolicy.videoQuality) {
+      policyIssues.push(
+        `Expected video_quality=${this.assetPolicy.videoQuality}, got ${actualVideoQuality}`
+      );
+    }
+
     return {
-      uploadId,
-      uploadUrl: "https://storage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4",
-      expiresAt: new Date(Date.now() + 10 * 60 * 1000).toISOString()
+      policyCompliant: policyIssues.length === 0,
+      policyIssues,
+      expectedMaxResolutionTier: this.assetPolicy.maxResolutionTier,
+      actualMaxResolutionTier,
+      expectedVideoQuality: this.assetPolicy.videoQuality,
+      actualVideoQuality
     };
   }
-
-  async retrieveUpload(uploadId: string): Promise<UploadLookup> {
-    const row = this.uploads.get(uploadId);
-    if (!row) {
-      return { uploadId, status: "errored" };
-    }
-    if (!row.assetId && Date.now() - row.createdAt > 1500) {
-      row.assetId = `mock-asset-${uploadId}`;
-    }
-    if (!row.assetId) {
-      return { uploadId, status: "waiting_upload" };
-    }
-    return {
-      uploadId,
-      assetId: row.assetId,
-      status: "asset_created"
-    };
-  }
-
-  async retrieveAsset(assetId: string): Promise<AssetLookup> {
-    const index = Math.max(this.sequence - 1, 0);
-    const playbackId = this.demoPlaybackIds[index] ?? this.demoPlaybackIds[0];
-    return {
-      assetId,
-      status: playbackId ? "ready" : "preparing",
-      playbackId
-    };
-  }
-}
-
-export function createVideoProvider(params: {
-  muxTokenId?: string;
-  muxTokenSecret?: string;
-  demoPlaybackIds: string[];
-}): VideoProvider {
-  if (params.muxTokenId && params.muxTokenSecret) {
-    return new MuxVideoProvider(params.muxTokenId, params.muxTokenSecret);
-  }
-  return new MockVideoProvider(params.demoPlaybackIds);
 }

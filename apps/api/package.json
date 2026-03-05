@@ -9,7 +9,8 @@
     "start": "node dist/src/index.js",
     "lint": "eslint src test --ext .ts",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "test": "vitest run"
+    "test": "vitest run --exclude test/*.integration.test.ts",
+    "test:integration": "vitest run test/mux.integration.test.ts"
   },
   "dependencies": {
     "@antique/types": "workspace:*",

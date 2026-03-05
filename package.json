@@ -11,6 +11,7 @@
     "lint": "pnpm -r lint",
     "typecheck": "pnpm --filter @antique/types exec tsc -b tsconfig.json --force && pnpm --filter @antique/mobile typecheck && tsc -b",
     "test": "pnpm -r test",
+    "test:integration": "pnpm --filter @antique/api test:integration",
     "dev:mobile": "pnpm --filter @antique/mobile dev",
     "dev:api": "pnpm --filter @antique/api dev",
     "build": "pnpm --filter @antique/api build"

@@ -6,12 +6,13 @@ import { registerFeedRoutes } from "./routes/feed.js";
 import { registerUploadRoutes } from "./routes/uploads.js";
 import { registerWebhookRoutes } from "./routes/webhook.js";
 import { type ApiConfig } from "./config.js";
-import { createVideoProvider, type VideoProvider } from "./services/videoProvider.js";
+import { UploadLifecycleService } from "./services/uploadLifecycle.js";
+import { MuxVideoService, type MuxClient } from "./services/videoProvider.js";
 
 export interface BuildServerParams {
   config: ApiConfig;
   store?: InMemoryVideoStore;
-  videoProvider?: VideoProvider;
+  muxClient?: MuxClient;
 }
 
 export async function buildServer(params: BuildServerParams): Promise<FastifyInstance> {
@@ -21,13 +22,19 @@ export async function buildServer(params: BuildServerParams): Promise<FastifyIns
 
   const store = params.store ?? new InMemoryVideoStore();
   store.seedDemoItems(params.config.demoPlaybackIds);
-  const videoProvider =
-    params.videoProvider ??
-    createVideoProvider({
+  const muxVideoService = new MuxVideoService(
+    {
       muxTokenId: params.config.muxTokenId,
       muxTokenSecret: params.config.muxTokenSecret,
-      demoPlaybackIds: params.config.demoPlaybackIds
-    });
+      muxAssetPolicy: {
+        maxResolutionTier: params.config.muxMaxResolutionTier,
+        videoQuality: params.config.muxVideoQuality,
+        playbackPolicy: ["public"]
+      }
+    },
+    params.muxClient
+  );
+  const uploadLifecycle = new UploadLifecycleService(store, muxVideoService);
 
   await app.register(cors, { origin: true });
   await app.register(multipart);
@@ -43,9 +50,12 @@ export async function buildServer(params: BuildServerParams): Promise<FastifyIns
   });
 
   app.get("/health", async () => ({ ok: true }));
-  await registerUploadRoutes(app, { store, videoProvider });
+  await registerUploadRoutes(app, { uploadLifecycle });
   await registerFeedRoutes(app, { store });
-  await registerWebhookRoutes(app, { store, muxWebhookSecret: params.config.muxWebhookSecret });
+  await registerWebhookRoutes(app, {
+    muxWebhookSecret: params.config.muxWebhookSecret,
+    uploadLifecycle
+  });
 
   return app;
 }

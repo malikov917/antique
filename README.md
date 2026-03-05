@@ -21,11 +21,51 @@ Agent-first monorepo for a cross-platform reels-style antique marketplace MVP.
 5. Run mobile app:
    - `pnpm dev:mobile`
 
+## Mux Encoding Policy (API)
+- Direct uploads create assets with explicit Mux settings:
+  - `max_resolution_tier=1080p`
+  - `video_quality=plus`
+  - `playback_policy=["public"]`
+- Policy values can be overridden with:
+  - `MUX_MAX_RESOLUTION_TIER` (`1080p`, `1440p`, `2160p`)
+  - `MUX_VIDEO_QUALITY` (`basic`, `plus`, `premium`)
+- Playback contract remains unchanged:
+  - `https://stream.mux.com/{playbackId}.m3u8`
+- Delivery remains adaptive by network speed via HLS ABR; clients receive lower or higher renditions up to the configured max tier.
+
+## API Secrets (Local)
+- Keep real Mux credentials in `apps/api/.env` (gitignored).
+- Required for upload routes and real integration test:
+  - `MUX_TOKEN_ID`
+  - `MUX_TOKEN_SECRET`
+- Optional:
+  - `MUX_WEBHOOK_SECRET`
+  - `MUX_MAX_RESOLUTION_TIER` (default `1080p`)
+  - `MUX_VIDEO_QUALITY` (default `plus`)
+- Upload endpoints fail fast with `503` when token credentials are missing:
+  - `POST /v1/uploads`
+  - `GET /v1/uploads/:uploadId`
+
 ## Quality Gates
 - `./scripts/check.sh`
 - `pnpm lint`
 - `pnpm typecheck`
 - `pnpm test`
+- `pnpm test:integration` (real Mux upload/stream regression)
+
+## Real Mux Integration Test
+- Command: `pnpm test:integration`
+- Scope:
+  - creates a real direct upload,
+  - uploads `apps/api/test/fixtures/smoke.mp4`,
+  - polls upload status until `ready`,
+  - validates feed exposure,
+  - downloads `https://stream.mux.com/{playbackId}.m3u8`,
+  - downloads first media segment from the playlist chain,
+  - deletes created Mux asset during cleanup.
+- Notes:
+  - This test intentionally uses real cloud resources and can take a few minutes.
+  - Missing/invalid credentials will fail the test run.
 
 ## Local Build + Run + Verify
 - `pnpm ensure:local`
