@@ -12,4 +12,4 @@ apps/mobile/dist
 .env.local
 apps/api/.env
 apps/mobile/.env
-
+apps/api/data/
