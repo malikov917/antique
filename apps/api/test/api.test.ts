@@ -1514,10 +1514,13 @@ describe("auth api", () => {
     const offerRows = dbClient.sqlite
       .prepare("SELECT id, status FROM offers WHERE listing_id = 'listing-win-1' ORDER BY id")
       .all() as Array<{ id: string; status: string }>;
-    expect(offerRows).toEqual([
-      { id: firstOfferId, status: "accepted" },
-      { id: secondOfferId, status: "declined" }
-    ]);
+    expect(offerRows).toHaveLength(2);
+    expect(offerRows).toEqual(
+      expect.arrayContaining([
+        { id: firstOfferId, status: "accepted" },
+        { id: secondOfferId, status: "declined" }
+      ])
+    );
 
     const listingRow = dbClient.sqlite
       .prepare("SELECT status FROM listings WHERE id = 'listing-win-1'")
