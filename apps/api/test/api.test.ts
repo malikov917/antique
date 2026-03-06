@@ -1232,6 +1232,61 @@ describe("auth api", () => {
     await app.close();
   });
 
+  it("rejects cross-tenant seller application review attempts", async () => {
+    const smsProvider = new TestSmsProvider();
+    const dbClient = createDatabaseClient(":memory:");
+    const app = await buildServer({
+      config: buildTestConfig(),
+      smsProvider,
+      muxClient: buildMockMuxClient(),
+      dbClient
+    });
+
+    const applicant = await createAuthenticatedSession(
+      app,
+      smsProvider,
+      "+14155559007",
+      "ios-device-seller-application-applicant-tenant"
+    );
+    const admin = await createAuthenticatedSession(
+      app,
+      smsProvider,
+      "+14155559008",
+      "ios-device-seller-application-admin-tenant"
+    );
+
+    dbClient.sqlite
+      .prepare("UPDATE users SET allowed_roles = ?, active_role = ?, tenant_id = ? WHERE id = ?")
+      .run(JSON.stringify(["buyer", "admin"]), "admin", "tenant-admin", admin.userId);
+
+    await app.inject({
+      method: "POST",
+      url: "/v1/seller/apply",
+      headers: {
+        authorization: `Bearer ${applicant.accessToken}`
+      },
+      payload: {
+        fullName: "Applicant Tenant",
+        shopName: "Tenant Shop"
+      }
+    });
+
+    const approveResponse = await app.inject({
+      method: "POST",
+      url: `/v1/admin/seller-applications/${applicant.userId}/approve`,
+      headers: {
+        authorization: `Bearer ${admin.accessToken}`
+      }
+    });
+
+    expect(approveResponse.statusCode).toBe(403);
+    expect(approveResponse.json()).toMatchObject({
+      code: "forbidden_tenant_scope"
+    });
+
+    await app.close();
+  });
+
   it("opens and closes market session and transitions live listings to day_closed", async () => {
     const smsProvider = new TestSmsProvider();
     const dbClient = createDatabaseClient(":memory:");
@@ -1540,6 +1595,71 @@ describe("auth api", () => {
     await app.close();
   });
 
+  it("rejects cross-tenant basket and offer mutations", async () => {
+    const smsProvider = new TestSmsProvider();
+    const dbClient = createDatabaseClient(":memory:");
+    const app = await buildServer({
+      config: buildTestConfig(),
+      smsProvider,
+      muxClient: buildMockMuxClient(),
+      dbClient
+    });
+
+    const seller = await createAuthenticatedSeller(app, smsProvider, dbClient, "+14155552675");
+    const buyer = await createAuthenticatedUser(app, smsProvider, "+14155552676");
+    dbClient.sqlite
+      .prepare("UPDATE users SET tenant_id = ? WHERE id = ?")
+      .run("tenant-b", buyer.userId);
+
+    const openResponse = await app.inject({
+      method: "POST",
+      url: "/v1/seller/sessions/open",
+      headers: {
+        authorization: `Bearer ${seller.accessToken}`
+      }
+    });
+    expect(openResponse.statusCode).toBe(200);
+    const sessionId = openResponse.json().session.id as string;
+    dbClient.sqlite
+      .prepare(
+        `
+          INSERT INTO listings (id, seller_user_id, market_session_id, status, created_at, updated_at)
+          VALUES ('listing-live-cross-tenant', ?, ?, 'live', 1, 1)
+        `
+      )
+      .run(seller.userId, sessionId);
+
+    const basketResponse = await app.inject({
+      method: "POST",
+      url: "/v1/listings/listing-live-cross-tenant/basket",
+      headers: {
+        authorization: `Bearer ${buyer.accessToken}`
+      }
+    });
+    expect(basketResponse.statusCode).toBe(403);
+    expect(basketResponse.json()).toMatchObject({
+      code: "forbidden_tenant_scope"
+    });
+
+    const offerResponse = await app.inject({
+      method: "POST",
+      url: "/v1/listings/listing-live-cross-tenant/offers",
+      headers: {
+        authorization: `Bearer ${buyer.accessToken}`
+      },
+      payload: {
+        amountCents: 30000,
+        shippingAddress: "456 Vintage Rd"
+      }
+    });
+    expect(offerResponse.statusCode).toBe(403);
+    expect(offerResponse.json()).toMatchObject({
+      code: "forbidden_tenant_scope"
+    });
+
+    await app.close();
+  });
+
   it("rejects unauthenticated seller application access", async () => {
     const app = await buildServer({
       config: buildTestConfig(),
@@ -1594,6 +1714,12 @@ describe("auth api", () => {
       "+14155550004",
       "ios-device-sales-other-seller"
     );
+    const crossTenantSeller = await createAuthenticatedSession(
+      app,
+      smsProvider,
+      "+14155550005",
+      "ios-device-sales-cross-tenant-seller"
+    );
 
     dbClient.sqlite
       .prepare("UPDATE users SET allowed_roles = ?, active_role = ? WHERE id = ?")
@@ -1607,6 +1733,9 @@ describe("auth api", () => {
     dbClient.sqlite
       .prepare("UPDATE users SET allowed_roles = ?, active_role = ? WHERE id = ?")
       .run(JSON.stringify(["buyer", "seller"]), "seller", otherSeller.userId);
+    dbClient.sqlite
+      .prepare("UPDATE users SET allowed_roles = ?, active_role = ?, tenant_id = ? WHERE id = ?")
+      .run(JSON.stringify(["buyer", "seller"]), "seller", "tenant-cross", crossTenantSeller.userId);
 
     dbClient.sqlite
       .prepare(
@@ -1672,6 +1801,18 @@ describe("auth api", () => {
     expect(adminExport.statusCode).toBe(200);
     expect(adminExport.body).toContain("Rare Film Reel");
 
+    const adminCrossTenantExport = await app.inject({
+      method: "GET",
+      url: `/v1/seller/sales.csv?sellerUserId=${crossTenantSeller.userId}`,
+      headers: {
+        authorization: `Bearer ${admin.accessToken}`
+      }
+    });
+    expect(adminCrossTenantExport.statusCode).toBe(403);
+    expect(adminCrossTenantExport.json()).toMatchObject({
+      code: "forbidden_tenant_scope"
+    });
+
     const auditRows = dbClient.sqlite
       .prepare(
         `
@@ -1691,15 +1832,16 @@ describe("auth api", () => {
       metadata_json: string;
     }>;
 
-    expect(auditRows).toHaveLength(4);
+    expect(auditRows).toHaveLength(5);
     const allowedCount = auditRows.filter((row) => row.outcome === "allowed").length;
     const deniedCount = auditRows.filter((row) => row.outcome === "denied").length;
     expect(allowedCount).toBe(2);
-    expect(deniedCount).toBe(2);
+    expect(deniedCount).toBe(3);
     const reasonCodes = new Set(auditRows.map((row) => row.reason_code));
     expect(reasonCodes.has("export_allowed")).toBe(true);
     expect(reasonCodes.has("forbidden_export_scope")).toBe(true);
     expect(reasonCodes.has("forbidden_export_role")).toBe(true);
+    expect(reasonCodes.has("forbidden_tenant_scope")).toBe(true);
     expect(auditRows.every((row) => !row.metadata_json.includes("address"))).toBe(true);
 
     await app.close();

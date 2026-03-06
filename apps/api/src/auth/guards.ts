@@ -24,3 +24,13 @@ export function requireSharedOwnership(ownerUserId: string, user: AuthUser): voi
     throw new AuthError("forbidden_owner_mismatch", "Resource does not belong to the authenticated user", 403);
   }
 }
+
+export function requireTenantScope(resourceTenantId: string, actorTenantId: string): void {
+  if (resourceTenantId !== actorTenantId) {
+    throw new AuthError(
+      "forbidden_tenant_scope",
+      "Resource does not belong to the authenticated tenant",
+      403
+    );
+  }
+}
