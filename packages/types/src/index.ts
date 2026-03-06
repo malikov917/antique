@@ -150,3 +150,54 @@ export interface RoleSwitchRequest {
 export interface RoleSwitchResponse {
   user: AuthUser;
 }
+
+export type MarketSessionStatus = "open" | "closed";
+
+export interface MarketSession {
+  id: string;
+  sellerUserId: string;
+  status: MarketSessionStatus;
+  openedAt: string;
+  closedAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface OpenMarketSessionResponse {
+  session: MarketSession;
+}
+
+export interface CloseMarketSessionResponse {
+  session: MarketSession;
+  transitionedListingCount: number;
+}
+
+export interface BasketItem {
+  id: string;
+  listingId: string;
+  buyerUserId: string;
+  createdAt: string;
+}
+
+export interface CreateBasketResponse {
+  basketItem: BasketItem;
+}
+
+export interface CreateOfferRequest {
+  amountCents: number;
+  shippingAddress: string;
+}
+
+export interface Offer {
+  id: string;
+  listingId: string;
+  buyerUserId: string;
+  amountCents: number;
+  shippingAddress: string;
+  status: "submitted";
+  createdAt: string;
+}
+
+export interface CreateOfferResponse {
+  offer: Offer;
+}
