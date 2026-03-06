@@ -21,6 +21,8 @@ export interface ApiConfig {
   authOtpRequestPerPhonePerHour: number;
   authOtpRequestPerIpPerHour: number;
   authOtpVerifyPerPhoneIpPerHour: number;
+  retentionPurgeEnabled: boolean;
+  retentionPurgeIntervalSec: number;
 }
 
 let localEnvLoaded = false;
@@ -46,6 +48,20 @@ function parseEnumValue<T extends string>(
 function parseNumberValue(value: string | undefined, fallback: number): number {
   const parsed = Number(value ?? "");
   return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
+}
+
+function parseBooleanValue(value: string | undefined, fallback: boolean): boolean {
+  if (value === undefined) {
+    return fallback;
+  }
+  const normalized = value.trim().toLowerCase();
+  if (normalized === "1" || normalized === "true" || normalized === "yes") {
+    return true;
+  }
+  if (normalized === "0" || normalized === "false" || normalized === "no") {
+    return false;
+  }
+  return fallback;
 }
 
 function findApiRoot(): string {
@@ -145,6 +161,8 @@ export function loadConfig(): ApiConfig {
     authOtpVerifyPerPhoneIpPerHour: parseNumberValue(
       process.env.AUTH_OTP_VERIFY_PER_PHONE_IP_PER_HOUR,
       10
-    )
+    ),
+    retentionPurgeEnabled: parseBooleanValue(process.env.RETENTION_PURGE_ENABLED, true),
+    retentionPurgeIntervalSec: parseNumberValue(process.env.RETENTION_PURGE_INTERVAL_SEC, 60 * 60)
   };
 }

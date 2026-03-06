@@ -37,7 +37,7 @@ function buildMockMuxClient(params?: {
 }
 
 function buildTestConfig(overrides?: Partial<ApiConfig>): ApiConfig {
-  return {
+  const base: ApiConfig = {
     port: 4000,
     dbPath: ":memory:",
     demoPlaybackIds: [],
@@ -56,6 +56,12 @@ function buildTestConfig(overrides?: Partial<ApiConfig>): ApiConfig {
     authOtpRequestPerPhonePerHour: 5,
     authOtpRequestPerIpPerHour: 30,
     authOtpVerifyPerPhoneIpPerHour: 10,
+    retentionPurgeEnabled: false,
+    retentionPurgeIntervalSec: 60 * 60,
+  };
+
+  return {
+    ...base,
     ...overrides
   };
 }
