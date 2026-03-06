@@ -11,7 +11,7 @@ import {
   type OtpVerifyResponse,
   type RefreshResponse
 } from "@antique/types";
-import { SignJWT } from "jose";
+import { SignJWT, jwtVerify } from "jose";
 import type { Database } from "better-sqlite3";
 import { AuthError } from "../auth/errors.js";
 import { generateOtpCode, generateToken, hashWithSecret, newId } from "../auth/crypto.js";
@@ -605,6 +605,42 @@ export class AuthService {
     transaction();
 
     return { success: true };
+  }
+
+  async authenticateAccessToken(accessToken: string): Promise<AuthUser> {
+    if (!accessToken) {
+      throw new AuthError("missing_access_token", "Access token is required", 401);
+    }
+
+    let payload: Awaited<ReturnType<typeof jwtVerify>>["payload"];
+    try {
+      const verified = await jwtVerify(accessToken, this.jwtKey, { algorithms: ["HS256"] });
+      payload = verified.payload;
+    } catch {
+      throw new AuthError("invalid_access_token", "Access token is invalid", 401);
+    }
+
+    const userId = typeof payload.userId === "string" ? payload.userId : payload.sub;
+    const sessionId = typeof payload.sessionId === "string" ? payload.sessionId : null;
+    if (typeof userId !== "string" || !sessionId) {
+      throw new AuthError("invalid_access_token", "Access token is invalid", 401);
+    }
+
+    const session = this.sqlite
+      .prepare("SELECT id, user_id, revoked_at FROM sessions WHERE id = ? LIMIT 1")
+      .get(sessionId) as Pick<SessionRow, "id" | "user_id" | "revoked_at"> | undefined;
+    if (!session || session.user_id !== userId || session.revoked_at) {
+      throw new AuthError("revoked_session", "Session is revoked", 401);
+    }
+
+    const user = this.sqlite
+      .prepare("SELECT * FROM users WHERE id = ? LIMIT 1")
+      .get(userId) as UserRow | undefined;
+    if (!user) {
+      throw new AuthError("invalid_access_token", "Access token is invalid", 401);
+    }
+
+    return this.asAuthUser(user);
   }
 
   private async createAccessToken(

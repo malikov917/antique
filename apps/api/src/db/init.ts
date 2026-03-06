@@ -60,5 +60,22 @@ export function initializeDatabase(sqlite: Database): void {
     CREATE INDEX IF NOT EXISTS idx_refresh_family ON refresh_tokens(family_id);
     CREATE INDEX IF NOT EXISTS idx_refresh_session ON refresh_tokens(session_id);
     CREATE INDEX IF NOT EXISTS idx_refresh_user ON refresh_tokens(user_id);
+
+    CREATE TABLE IF NOT EXISTS seller_applications (
+      id TEXT PRIMARY KEY,
+      user_id TEXT NOT NULL UNIQUE,
+      status TEXT NOT NULL,
+      full_name TEXT,
+      shop_name TEXT,
+      note TEXT,
+      rejection_reason TEXT,
+      submitted_at INTEGER,
+      reviewed_at INTEGER,
+      created_at INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL,
+      FOREIGN KEY (user_id) REFERENCES users(id)
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_seller_applications_status ON seller_applications(status);
   `);
 }

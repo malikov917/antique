@@ -106,3 +106,30 @@ export interface LogoutRequest {
 export interface LogoutResponse {
   success: true;
 }
+
+export type SellerApplicationStatus = "not_requested" | "pending" | "approved" | "rejected";
+
+export interface SellerApplication {
+  status: SellerApplicationStatus;
+  fullName: string | null;
+  shopName: string | null;
+  note: string | null;
+  rejectionReason: string | null;
+  submittedAt: string | null;
+  reviewedAt: string | null;
+  updatedAt: string | null;
+}
+
+export interface SellerApplyRequest {
+  fullName: string;
+  shopName: string;
+  note?: string;
+}
+
+export interface SellerApplyResponse {
+  application: SellerApplication;
+}
+
+export interface SellerApplicationResponse {
+  application: SellerApplication;
+}
