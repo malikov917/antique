@@ -73,6 +73,7 @@ export function initializeDatabase(sqlite: Database): void {
       rejection_reason TEXT,
       submitted_at INTEGER,
       reviewed_at INTEGER,
+      reviewed_by_user_id TEXT,
       created_at INTEGER NOT NULL,
       updated_at INTEGER NOT NULL,
       FOREIGN KEY (user_id) REFERENCES users(id)
@@ -193,6 +194,13 @@ export function initializeDatabase(sqlite: Database): void {
   }
   if (!userColumns.some((column) => column.name === "suspended_at")) {
     sqlite.exec("ALTER TABLE users ADD COLUMN suspended_at INTEGER");
+  }
+
+  const sellerApplicationColumns = sqlite
+    .prepare("PRAGMA table_info(seller_applications)")
+    .all() as Array<{ name: string }>;
+  if (!sellerApplicationColumns.some((column) => column.name === "reviewed_by_user_id")) {
+    sqlite.exec("ALTER TABLE seller_applications ADD COLUMN reviewed_by_user_id TEXT");
   }
 
   const offerColumns = sqlite.prepare("PRAGMA table_info(offers)").all() as Array<{ name: string }>;

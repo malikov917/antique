@@ -1,4 +1,7 @@
 import type {
+  ApproveSellerApplicationResponse,
+  RejectSellerApplicationRequest,
+  RejectSellerApplicationResponse,
   SellerApplicationResponse,
   SellerApplyRequest,
   SellerApplyResponse
@@ -47,6 +50,76 @@ export async function registerSellerRoutes(
   app: FastifyInstance,
   deps: SellerRouteDeps
 ): Promise<void> {
+  app.post<{ Reply: ApproveSellerApplicationResponse }>(
+    "/v1/admin/seller-applications/:userId/approve",
+    async (request, reply) => {
+      try {
+        const accessToken = extractBearerToken(request.headers.authorization);
+        const user = await deps.authService.authenticateAccessToken(accessToken);
+        if (user.activeRole !== "admin") {
+          throw new AuthError("forbidden_role", "Admin role is required", 403);
+        }
+
+        const params = request.params as { userId?: string } | undefined;
+        const targetUserId = params?.userId?.trim();
+        if (!targetUserId) {
+          throw new AuthError("invalid_request", "userId route parameter is required", 400);
+        }
+
+        return {
+          application: deps.sellerApplicationService.approve({
+            actorUserId: user.id,
+            targetUserId,
+            requestIp: request.ip
+          })
+        };
+      } catch (error) {
+        if (error instanceof AuthError) {
+          return sendAuthError(reply, error);
+        }
+        throw error;
+      }
+    }
+  );
+
+  app.post<{ Body: RejectSellerApplicationRequest; Reply: RejectSellerApplicationResponse }>(
+    "/v1/admin/seller-applications/:userId/reject",
+    async (request, reply) => {
+      try {
+        const accessToken = extractBearerToken(request.headers.authorization);
+        const user = await deps.authService.authenticateAccessToken(accessToken);
+        if (user.activeRole !== "admin") {
+          throw new AuthError("forbidden_role", "Admin role is required", 403);
+        }
+
+        const params = request.params as { userId?: string } | undefined;
+        const targetUserId = params?.userId?.trim();
+        if (!targetUserId) {
+          throw new AuthError("invalid_request", "userId route parameter is required", 400);
+        }
+
+        const body = assertObjectBody(request.body);
+        if (typeof body.reason !== "string") {
+          throw new AuthError("invalid_request", "reason is required", 400);
+        }
+
+        return {
+          application: deps.sellerApplicationService.reject({
+            actorUserId: user.id,
+            targetUserId,
+            reason: body.reason,
+            requestIp: request.ip
+          })
+        };
+      } catch (error) {
+        if (error instanceof AuthError) {
+          return sendAuthError(reply, error);
+        }
+        throw error;
+      }
+    }
+  );
+
   app.get("/v1/seller/sales.csv", async (request, reply) => {
     try {
       const accessToken = extractBearerToken(request.headers.authorization);
