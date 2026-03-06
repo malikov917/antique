@@ -75,6 +75,32 @@ class TestSmsProvider implements SmsProvider {
   }
 }
 
+async function createAuthenticatedBuyer(
+  app: Awaited<ReturnType<typeof buildServer>>,
+  smsProvider: TestSmsProvider,
+  phone = "+14155552671"
+): Promise<string> {
+  await app.inject({
+    method: "POST",
+    url: "/v1/auth/otp/request",
+    payload: { phone }
+  });
+
+  const code = smsProvider.getLastCode(phone);
+  const verifyResponse = await app.inject({
+    method: "POST",
+    url: "/v1/auth/otp/verify",
+    payload: {
+      phone,
+      code,
+      deviceId: "seller-app-device",
+      platform: "ios"
+    }
+  });
+
+  return verifyResponse.json().tokens.accessToken as string;
+}
+
 describe("api", () => {
   const secret = "whsec_test";
   let app: Awaited<ReturnType<typeof buildServer>>;
@@ -559,6 +585,106 @@ describe("auth api", () => {
     });
     expect(refreshAfterLogout.statusCode).toBe(401);
     expect(refreshAfterLogout.json()).toMatchObject({ code: "revoked_refresh_token" });
+
+    await app.close();
+  });
+
+  it("returns not_requested when seller application has not been submitted", async () => {
+    const smsProvider = new TestSmsProvider();
+    const app = await buildServer({
+      config: buildTestConfig(),
+      smsProvider,
+      muxClient: buildMockMuxClient()
+    });
+
+    const accessToken = await createAuthenticatedBuyer(app, smsProvider);
+    const response = await app.inject({
+      method: "GET",
+      url: "/v1/seller/application",
+      headers: {
+        authorization: `Bearer ${accessToken}`
+      }
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toMatchObject({
+      application: {
+        status: "not_requested",
+        fullName: null,
+        shopName: null
+      }
+    });
+
+    await app.close();
+  });
+
+  it("submits seller application and returns canonical pending state", async () => {
+    const smsProvider = new TestSmsProvider();
+    const app = await buildServer({
+      config: buildTestConfig(),
+      smsProvider,
+      muxClient: buildMockMuxClient()
+    });
+
+    const accessToken = await createAuthenticatedBuyer(app, smsProvider);
+
+    const submitResponse = await app.inject({
+      method: "POST",
+      url: "/v1/seller/apply",
+      headers: {
+        authorization: `Bearer ${accessToken}`
+      },
+      payload: {
+        fullName: "Ada Lovelace",
+        shopName: "Reel Revival",
+        note: "Specializing in film reels"
+      }
+    });
+    expect(submitResponse.statusCode).toBe(200);
+    expect(submitResponse.json()).toMatchObject({
+      application: {
+        status: "pending",
+        fullName: "Ada Lovelace",
+        shopName: "Reel Revival",
+        note: "Specializing in film reels"
+      }
+    });
+
+    const fetchResponse = await app.inject({
+      method: "GET",
+      url: "/v1/seller/application",
+      headers: {
+        authorization: `Bearer ${accessToken}`
+      }
+    });
+    expect(fetchResponse.statusCode).toBe(200);
+    expect(fetchResponse.json()).toMatchObject({
+      application: {
+        status: "pending",
+        fullName: "Ada Lovelace",
+        shopName: "Reel Revival"
+      }
+    });
+
+    await app.close();
+  });
+
+  it("rejects unauthenticated seller application access", async () => {
+    const app = await buildServer({
+      config: buildTestConfig(),
+      smsProvider: new TestSmsProvider(),
+      muxClient: buildMockMuxClient()
+    });
+
+    const response = await app.inject({
+      method: "GET",
+      url: "/v1/seller/application"
+    });
+
+    expect(response.statusCode).toBe(401);
+    expect(response.json()).toMatchObject({
+      code: "missing_access_token"
+    });
 
     await app.close();
   });

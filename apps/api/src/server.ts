@@ -7,6 +7,7 @@ import { registerFeedRoutes } from "./routes/feed.js";
 import { registerUploadRoutes } from "./routes/uploads.js";
 import { registerWebhookRoutes } from "./routes/webhook.js";
 import { registerAuthRoutes } from "./routes/auth.js";
+import { registerSellerRoutes } from "./routes/seller.js";
 import { type ApiConfig } from "./config.js";
 import { createDatabaseClient, type DatabaseClient } from "./db/client.js";
 import { initializeDatabase } from "./db/init.js";
@@ -14,6 +15,7 @@ import { UploadLifecycleService } from "./services/uploadLifecycle.js";
 import { MuxVideoService, type MuxClient } from "./services/videoProvider.js";
 import { AuthService, type SmsProvider } from "./services/authService.js";
 import { LoggingSmsProvider } from "./services/smsProvider.js";
+import { SellerApplicationService } from "./services/sellerApplicationService.js";
 
 export interface BuildServerParams {
   config: ApiConfig;
@@ -64,6 +66,7 @@ export async function buildServer(params: BuildServerParams): Promise<FastifyIns
     smsProvider,
     params.now
   );
+  const sellerApplicationService = new SellerApplicationService(dbClient.sqlite, params.now);
 
   await app.register(cors, { origin: true });
   await app.register(multipart);
@@ -86,6 +89,10 @@ export async function buildServer(params: BuildServerParams): Promise<FastifyIns
     authService,
     otpRequestIpRateLimitMax: params.config.authOtpRequestPerIpPerHour,
     otpVerifyIpRateLimitMax: params.config.authOtpVerifyPerPhoneIpPerHour
+  });
+  await registerSellerRoutes(app, {
+    authService,
+    sellerApplicationService
   });
   await registerWebhookRoutes(app, {
     muxWebhookSecret: params.config.muxWebhookSecret,
