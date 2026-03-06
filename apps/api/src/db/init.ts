@@ -10,6 +10,7 @@ export function initializeDatabase(sqlite: Database): void {
       allowed_roles TEXT NOT NULL,
       active_role TEXT NOT NULL,
       seller_profile_id TEXT,
+      suspended_at INTEGER,
       created_at INTEGER NOT NULL
     );
 
@@ -132,10 +133,47 @@ export function initializeDatabase(sqlite: Database): void {
     );
 
     CREATE INDEX IF NOT EXISTS idx_offers_listing_status ON offers(listing_id, status);
+
+    CREATE TABLE IF NOT EXISTS seller_sales (
+      id TEXT PRIMARY KEY,
+      seller_user_id TEXT NOT NULL,
+      session_id TEXT NOT NULL,
+      listing_id TEXT NOT NULL,
+      listing_title TEXT NOT NULL,
+      accepted_offer_amount_cents INTEGER NOT NULL,
+      currency TEXT NOT NULL,
+      buyer_user_id TEXT NOT NULL,
+      sold_at INTEGER NOT NULL,
+      created_at INTEGER NOT NULL,
+      FOREIGN KEY (seller_user_id) REFERENCES users(id),
+      FOREIGN KEY (buyer_user_id) REFERENCES users(id)
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_seller_sales_seller_sold_at
+      ON seller_sales(seller_user_id, sold_at DESC);
+
+    CREATE TABLE IF NOT EXISTS audit_events (
+      id TEXT PRIMARY KEY,
+      event_type TEXT NOT NULL,
+      actor_user_id TEXT,
+      actor_role TEXT,
+      target_seller_user_id TEXT,
+      outcome TEXT NOT NULL,
+      reason_code TEXT NOT NULL,
+      request_ip TEXT,
+      metadata_json TEXT NOT NULL,
+      created_at INTEGER NOT NULL
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_audit_events_type_created
+      ON audit_events(event_type, created_at DESC);
   `);
 
   const userColumns = sqlite.prepare("PRAGMA table_info(users)").all() as Array<{ name: string }>;
   if (!userColumns.some((column) => column.name === "display_name")) {
     sqlite.exec("ALTER TABLE users ADD COLUMN display_name TEXT");
+  }
+  if (!userColumns.some((column) => column.name === "suspended_at")) {
+    sqlite.exec("ALTER TABLE users ADD COLUMN suspended_at INTEGER");
   }
 }

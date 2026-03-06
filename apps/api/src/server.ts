@@ -19,6 +19,7 @@ import { AuthService, type SmsProvider } from "./services/authService.js";
 import { LoggingSmsProvider } from "./services/smsProvider.js";
 import { SellerApplicationService } from "./services/sellerApplicationService.js";
 import { MarketplaceService } from "./services/marketplaceService.js";
+import { SellerSalesService } from "./services/sellerSalesService.js";
 
 export interface BuildServerParams {
   config: ApiConfig;
@@ -71,6 +72,7 @@ export async function buildServer(params: BuildServerParams): Promise<FastifyIns
   );
   const sellerApplicationService = new SellerApplicationService(dbClient.sqlite, params.now);
   const marketplaceService = new MarketplaceService(dbClient.sqlite, params.now);
+  const sellerSalesService = new SellerSalesService(dbClient.sqlite, params.now);
 
   await app.register(cors, { origin: true });
   await app.register(multipart);
@@ -97,7 +99,8 @@ export async function buildServer(params: BuildServerParams): Promise<FastifyIns
   await registerMeRoutes(app, { authService });
   await registerSellerRoutes(app, {
     authService,
-    sellerApplicationService
+    sellerApplicationService,
+    sellerSalesService
   });
   await registerMarketplaceRoutes(app, {
     authService,
