@@ -7,6 +7,10 @@ import type {
 } from "@antique/types";
 import { AuthError } from "../auth/errors.js";
 import { newId } from "../auth/crypto.js";
+import type {
+  ListingMutationDomainService,
+  MarketSessionDomainService
+} from "../domain/marketplace/contracts.js";
 
 type ListingStatus = "live" | "day_closed" | "sold" | "withdrawn";
 
@@ -42,7 +46,9 @@ function toMarketSession(row: MarketSessionRow): MarketSession {
   };
 }
 
-export class MarketplaceService {
+export class MarketplaceService
+  implements MarketSessionDomainService, ListingMutationDomainService
+{
   constructor(
     private readonly sqlite: Database,
     private readonly now: () => number = () => Date.now()

@@ -6,13 +6,15 @@ import type {
 import type { FastifyInstance, FastifyReply } from "fastify";
 import { AuthError } from "../auth/errors.js";
 import { type AuthService } from "../services/authService.js";
-import { type SellerApplicationService } from "../services/sellerApplicationService.js";
-import { type SellerSalesService } from "../services/sellerSalesService.js";
+import type {
+  SellerApplicationDomainService,
+  SellerSalesDomainService
+} from "../domain/seller/contracts.js";
 
 interface SellerRouteDeps {
   authService: AuthService;
-  sellerApplicationService: SellerApplicationService;
-  sellerSalesService: SellerSalesService;
+  sellerApplicationService: SellerApplicationDomainService;
+  sellerSalesService: SellerSalesDomainService;
 }
 
 function sendAuthError(reply: FastifyReply, error: AuthError): ReturnType<FastifyReply["send"]> {

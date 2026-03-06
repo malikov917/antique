@@ -136,7 +136,8 @@ export async function buildServer(params: BuildServerParams): Promise<FastifyIns
   });
   await registerMarketplaceRoutes(app, {
     authService,
-    marketplaceService
+    marketSessionService: marketplaceService,
+    listingMutationService: marketplaceService
   });
   await registerWebhookRoutes(app, {
     muxWebhookSecret: params.config.muxWebhookSecret,
