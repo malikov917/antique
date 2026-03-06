@@ -137,6 +137,24 @@ export function initializeDatabase(sqlite: Database): void {
     CREATE INDEX IF NOT EXISTS idx_offers_listing_status ON offers(listing_id, status);
     CREATE INDEX IF NOT EXISTS idx_offers_shipping_purge ON offers(shipping_address_purged_at);
 
+    CREATE TABLE IF NOT EXISTS deals (
+      id TEXT PRIMARY KEY,
+      listing_id TEXT NOT NULL UNIQUE,
+      accepted_offer_id TEXT NOT NULL UNIQUE,
+      seller_user_id TEXT NOT NULL,
+      buyer_user_id TEXT NOT NULL,
+      status TEXT NOT NULL,
+      created_at INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL,
+      FOREIGN KEY (listing_id) REFERENCES listings(id),
+      FOREIGN KEY (accepted_offer_id) REFERENCES offers(id),
+      FOREIGN KEY (seller_user_id) REFERENCES users(id),
+      FOREIGN KEY (buyer_user_id) REFERENCES users(id)
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_deals_seller_created_at
+      ON deals(seller_user_id, created_at DESC);
+
     CREATE TABLE IF NOT EXISTS seller_sales (
       id TEXT PRIMARY KEY,
       seller_user_id TEXT NOT NULL,

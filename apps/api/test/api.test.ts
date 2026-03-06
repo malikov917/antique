@@ -1378,6 +1378,165 @@ describe("auth api", () => {
     await app.close();
   });
 
+  it("supports seller offer inbox and single-winner accept flow with idempotency", async () => {
+    const smsProvider = new TestSmsProvider();
+    const dbClient = createDatabaseClient(":memory:");
+    const app = await buildServer({
+      config: buildTestConfig(),
+      smsProvider,
+      muxClient: buildMockMuxClient(),
+      dbClient
+    });
+
+    const seller = await createAuthenticatedSeller(app, smsProvider, dbClient, "+14155552680");
+    const buyerOne = await createAuthenticatedUser(app, smsProvider, "+14155552681");
+    const buyerTwo = await createAuthenticatedUser(app, smsProvider, "+14155552682");
+
+    const sessionResponse = await app.inject({
+      method: "POST",
+      url: "/v1/seller/sessions/open",
+      headers: {
+        authorization: `Bearer ${seller.accessToken}`
+      }
+    });
+    const sessionId = sessionResponse.json().session.id as string;
+    dbClient.sqlite
+      .prepare(
+        `
+          INSERT INTO listings (id, seller_user_id, market_session_id, status, created_at, updated_at)
+          VALUES ('listing-win-1', ?, ?, 'live', 1, 1)
+        `
+      )
+      .run(seller.userId, sessionId);
+
+    const firstOfferResponse = await app.inject({
+      method: "POST",
+      url: "/v1/listings/listing-win-1/offers",
+      headers: {
+        authorization: `Bearer ${buyerOne.accessToken}`
+      },
+      payload: {
+        amountCents: 12000,
+        shippingAddress: "111 Tape Ave"
+      }
+    });
+    const secondOfferResponse = await app.inject({
+      method: "POST",
+      url: "/v1/listings/listing-win-1/offers",
+      headers: {
+        authorization: `Bearer ${buyerTwo.accessToken}`
+      },
+      payload: {
+        amountCents: 13000,
+        shippingAddress: "222 Film St"
+      }
+    });
+    expect(firstOfferResponse.statusCode).toBe(200);
+    expect(secondOfferResponse.statusCode).toBe(200);
+    const firstOfferId = firstOfferResponse.json().offer.id as string;
+    const secondOfferId = secondOfferResponse.json().offer.id as string;
+
+    const inboxResponse = await app.inject({
+      method: "GET",
+      url: "/v1/seller/listings/listing-win-1/offers",
+      headers: {
+        authorization: `Bearer ${seller.accessToken}`
+      }
+    });
+    expect(inboxResponse.statusCode).toBe(200);
+    expect(inboxResponse.json().offers).toHaveLength(2);
+    expect(inboxResponse.json().offers.map((offer: { id: string }) => offer.id).sort()).toEqual(
+      [firstOfferId, secondOfferId].sort()
+    );
+
+    const acceptResponse = await app.inject({
+      method: "POST",
+      url: `/v1/offers/${firstOfferId}/accept`,
+      headers: {
+        authorization: `Bearer ${seller.accessToken}`
+      }
+    });
+    expect(acceptResponse.statusCode).toBe(200);
+    expect(acceptResponse.json()).toMatchObject({
+      autoDeclinedCount: 1,
+      offer: {
+        id: firstOfferId,
+        status: "accepted"
+      },
+      deal: {
+        listingId: "listing-win-1",
+        acceptedOfferId: firstOfferId,
+        sellerUserId: seller.userId,
+        buyerUserId: buyerOne.userId
+      }
+    });
+
+    const idempotentAccept = await app.inject({
+      method: "POST",
+      url: `/v1/offers/${firstOfferId}/accept`,
+      headers: {
+        authorization: `Bearer ${seller.accessToken}`
+      }
+    });
+    expect(idempotentAccept.statusCode).toBe(200);
+    expect(idempotentAccept.json()).toMatchObject({
+      autoDeclinedCount: 0,
+      offer: {
+        id: firstOfferId,
+        status: "accepted"
+      }
+    });
+
+    const competingAccept = await app.inject({
+      method: "POST",
+      url: `/v1/offers/${secondOfferId}/accept`,
+      headers: {
+        authorization: `Bearer ${seller.accessToken}`
+      }
+    });
+    expect(competingAccept.statusCode).toBe(409);
+    expect(competingAccept.json()).toMatchObject({
+      code: "offer_already_selected"
+    });
+
+    const declineAccepted = await app.inject({
+      method: "POST",
+      url: `/v1/offers/${firstOfferId}/decline`,
+      headers: {
+        authorization: `Bearer ${seller.accessToken}`
+      }
+    });
+    expect(declineAccepted.statusCode).toBe(409);
+    expect(declineAccepted.json()).toMatchObject({
+      code: "offer_not_actionable"
+    });
+
+    const offerRows = dbClient.sqlite
+      .prepare("SELECT id, status FROM offers WHERE listing_id = 'listing-win-1' ORDER BY id")
+      .all() as Array<{ id: string; status: string }>;
+    expect(offerRows).toEqual([
+      { id: firstOfferId, status: "accepted" },
+      { id: secondOfferId, status: "declined" }
+    ]);
+
+    const listingRow = dbClient.sqlite
+      .prepare("SELECT status FROM listings WHERE id = 'listing-win-1'")
+      .get() as { status: string } | undefined;
+    expect(listingRow).toMatchObject({ status: "sold" });
+
+    const dealRows = dbClient.sqlite
+      .prepare("SELECT listing_id, accepted_offer_id FROM deals WHERE listing_id = 'listing-win-1'")
+      .all() as Array<{ listing_id: string; accepted_offer_id: string }>;
+    expect(dealRows).toEqual([
+      {
+        listing_id: "listing-win-1",
+        accepted_offer_id: firstOfferId
+      }
+    ]);
+
+    await app.close();
+  });
+
   it("rejects unauthenticated seller application access", async () => {
     const app = await buildServer({
       config: buildTestConfig(),

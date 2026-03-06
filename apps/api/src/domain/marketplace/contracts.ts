@@ -1,4 +1,4 @@
-import type { BasketItem, MarketSession, Offer } from "@antique/types";
+import type { BasketItem, Deal, MarketSession, Offer } from "@antique/types";
 
 export interface CloseMarketSessionInput {
   sellerUserId: string;
@@ -30,9 +30,23 @@ export interface MarketSessionDomainService {
 export interface ListingMutationDomainService {
   createBasketItem(params: CreateBasketItemInput): BasketItem;
   createOffer(params: CreateOfferInput): Offer;
+  listSellerListingOffers(params: { sellerUserId: string; listingId: string }): Offer[];
+  acceptOffer(params: { sellerUserId: string; offerId: string }): {
+    offer: Offer;
+    deal: Deal;
+    autoDeclinedCount: number;
+  };
+  declineOffer(params: { sellerUserId: string; offerId: string }): Offer;
 }
 
 // Forward contracts for upcoming P2-P4 extraction work.
-export interface DealDomainService {}
+export interface DealDomainService {
+  acceptOffer(params: { sellerUserId: string; offerId: string }): {
+    offer: Offer;
+    deal: Deal;
+    autoDeclinedCount: number;
+  };
+  declineOffer(params: { sellerUserId: string; offerId: string }): Offer;
+}
 export interface ChatDomainService {}
 export interface NotificationDomainService {}

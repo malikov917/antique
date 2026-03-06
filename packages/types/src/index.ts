@@ -206,10 +206,34 @@ export interface Offer {
   buyerUserId: string;
   amountCents: number;
   shippingAddress: string;
-  status: "submitted";
+  status: "submitted" | "accepted" | "declined";
   createdAt: string;
 }
 
 export interface CreateOfferResponse {
+  offer: Offer;
+}
+
+export interface Deal {
+  id: string;
+  listingId: string;
+  acceptedOfferId: string;
+  sellerUserId: string;
+  buyerUserId: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface SellerListingOffersResponse {
+  offers: Offer[];
+}
+
+export interface AcceptOfferResponse {
+  offer: Offer;
+  deal: Deal;
+  autoDeclinedCount: number;
+}
+
+export interface DeclineOfferResponse {
   offer: Offer;
 }
