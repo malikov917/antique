@@ -126,6 +126,7 @@ export function initializeDatabase(sqlite: Database): void {
       buyer_user_id TEXT NOT NULL,
       amount_cents INTEGER NOT NULL,
       shipping_address TEXT NOT NULL,
+      shipping_address_purged_at INTEGER,
       status TEXT NOT NULL,
       created_at INTEGER NOT NULL,
       FOREIGN KEY (listing_id) REFERENCES listings(id),
@@ -133,6 +134,7 @@ export function initializeDatabase(sqlite: Database): void {
     );
 
     CREATE INDEX IF NOT EXISTS idx_offers_listing_status ON offers(listing_id, status);
+    CREATE INDEX IF NOT EXISTS idx_offers_shipping_purge ON offers(shipping_address_purged_at);
 
     CREATE TABLE IF NOT EXISTS seller_sales (
       id TEXT PRIMARY KEY,
@@ -143,6 +145,7 @@ export function initializeDatabase(sqlite: Database): void {
       accepted_offer_amount_cents INTEGER NOT NULL,
       currency TEXT NOT NULL,
       buyer_user_id TEXT NOT NULL,
+      pii_purged_at INTEGER,
       sold_at INTEGER NOT NULL,
       created_at INTEGER NOT NULL,
       FOREIGN KEY (seller_user_id) REFERENCES users(id),
@@ -151,6 +154,7 @@ export function initializeDatabase(sqlite: Database): void {
 
     CREATE INDEX IF NOT EXISTS idx_seller_sales_seller_sold_at
       ON seller_sales(seller_user_id, sold_at DESC);
+    CREATE INDEX IF NOT EXISTS idx_seller_sales_pii_purged_at ON seller_sales(pii_purged_at);
 
     CREATE TABLE IF NOT EXISTS audit_events (
       id TEXT PRIMARY KEY,
@@ -167,6 +171,20 @@ export function initializeDatabase(sqlite: Database): void {
 
     CREATE INDEX IF NOT EXISTS idx_audit_events_type_created
       ON audit_events(event_type, created_at DESC);
+
+    CREATE TABLE IF NOT EXISTS retention_purge_runs (
+      id TEXT PRIMARY KEY,
+      started_at INTEGER NOT NULL,
+      completed_at INTEGER,
+      status TEXT NOT NULL,
+      purged_offer_addresses INTEGER NOT NULL DEFAULT 0,
+      purged_seller_sales_pii INTEGER NOT NULL DEFAULT 0,
+      purged_audit_events INTEGER NOT NULL DEFAULT 0,
+      error_message TEXT
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_retention_purge_runs_started_at
+      ON retention_purge_runs(started_at DESC);
   `);
 
   const userColumns = sqlite.prepare("PRAGMA table_info(users)").all() as Array<{ name: string }>;
@@ -175,5 +193,15 @@ export function initializeDatabase(sqlite: Database): void {
   }
   if (!userColumns.some((column) => column.name === "suspended_at")) {
     sqlite.exec("ALTER TABLE users ADD COLUMN suspended_at INTEGER");
+  }
+
+  const offerColumns = sqlite.prepare("PRAGMA table_info(offers)").all() as Array<{ name: string }>;
+  if (!offerColumns.some((column) => column.name === "shipping_address_purged_at")) {
+    sqlite.exec("ALTER TABLE offers ADD COLUMN shipping_address_purged_at INTEGER");
+  }
+
+  const sellerSalesColumns = sqlite.prepare("PRAGMA table_info(seller_sales)").all() as Array<{ name: string }>;
+  if (!sellerSalesColumns.some((column) => column.name === "pii_purged_at")) {
+    sqlite.exec("ALTER TABLE seller_sales ADD COLUMN pii_purged_at INTEGER");
   }
 }

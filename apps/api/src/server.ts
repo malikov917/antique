@@ -20,6 +20,7 @@ import { LoggingSmsProvider } from "./services/smsProvider.js";
 import { SellerApplicationService } from "./services/sellerApplicationService.js";
 import { MarketplaceService } from "./services/marketplaceService.js";
 import { SellerSalesService } from "./services/sellerSalesService.js";
+import { RetentionPurgeService } from "./services/retentionPurgeService.js";
 
 export interface BuildServerParams {
   config: ApiConfig;
@@ -73,6 +74,37 @@ export async function buildServer(params: BuildServerParams): Promise<FastifyIns
   const sellerApplicationService = new SellerApplicationService(dbClient.sqlite, params.now);
   const marketplaceService = new MarketplaceService(dbClient.sqlite, params.now);
   const sellerSalesService = new SellerSalesService(dbClient.sqlite, params.now);
+  const retentionPurgeService = new RetentionPurgeService(dbClient.sqlite, params.now);
+  let retentionTimer: ReturnType<typeof setInterval> | undefined;
+
+  if (params.config.retentionPurgeEnabled) {
+    retentionTimer = setInterval(() => {
+      try {
+        const purgeResult = retentionPurgeService.runDuePurge();
+        const metrics = retentionPurgeService.getMetrics();
+        app.log.info(
+          {
+            purgedOfferAddresses: purgeResult.purgedOfferAddresses,
+            purgedSellerSalesPii: purgeResult.purgedSellerSalesPii,
+            purgedAuditEvents: purgeResult.purgedAuditEvents,
+            dueOfferAddressPurges: metrics.dueOfferAddressPurges,
+            offerBacklogAgeMs: metrics.offerBacklogAgeMs,
+            offerBacklogSlaBreached: metrics.offerBacklogSlaBreached
+          },
+          "Retention purge run completed"
+        );
+        if (metrics.offerBacklogSlaBreached) {
+          app.log.warn(
+            { offerBacklogAgeMs: metrics.offerBacklogAgeMs },
+            "Retention purge backlog breached 24h SLA"
+          );
+        }
+      } catch (error) {
+        app.log.error({ err: error }, "Retention purge run failed");
+      }
+    }, params.config.retentionPurgeIntervalSec * 1000);
+    retentionTimer.unref();
+  }
 
   await app.register(cors, { origin: true });
   await app.register(multipart);
@@ -112,6 +144,9 @@ export async function buildServer(params: BuildServerParams): Promise<FastifyIns
   });
 
   app.addHook("onClose", async () => {
+    if (retentionTimer) {
+      clearInterval(retentionTimer);
+    }
     dbClient.close();
   });
 
