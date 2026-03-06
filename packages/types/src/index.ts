@@ -135,6 +135,18 @@ export interface SellerApplicationResponse {
   application: SellerApplication;
 }
 
+export interface ApproveSellerApplicationResponse {
+  application: SellerApplication;
+}
+
+export interface RejectSellerApplicationRequest {
+  reason: string;
+}
+
+export interface RejectSellerApplicationResponse {
+  application: SellerApplication;
+}
+
 export interface MeResponse {
   user: AuthUser;
 }

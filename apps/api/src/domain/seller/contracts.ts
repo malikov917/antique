@@ -7,9 +7,21 @@ export interface SubmitSellerApplicationInput {
   note?: string;
 }
 
+export interface ReviewSellerApplicationInput {
+  actorUserId: string;
+  targetUserId: string;
+  requestIp?: string;
+}
+
+export interface RejectSellerApplicationInput extends ReviewSellerApplicationInput {
+  reason: string;
+}
+
 export interface SellerApplicationDomainService {
   getForUser(userId: string): SellerApplication;
   submit(input: SubmitSellerApplicationInput): SellerApplication;
+  approve(input: ReviewSellerApplicationInput): SellerApplication;
+  reject(input: RejectSellerApplicationInput): SellerApplication;
 }
 
 export interface ExportSalesCsvInput {
