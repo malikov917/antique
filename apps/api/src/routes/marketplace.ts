@@ -1,9 +1,12 @@
 import type {
+  AcceptOfferResponse,
   CloseMarketSessionResponse,
   CreateBasketResponse,
   CreateOfferRequest,
+  DeclineOfferResponse,
   CreateOfferResponse,
-  OpenMarketSessionResponse
+  OpenMarketSessionResponse,
+  SellerListingOffersResponse
 } from "@antique/types";
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import { AuthError } from "../auth/errors.js";
@@ -134,6 +137,76 @@ export async function registerMarketplaceRoutes(
             listingId: request.params.id,
             amountCents: body.amountCents as number,
             shippingAddress: body.shippingAddress.trim()
+          })
+        };
+      } catch (error) {
+        if (error instanceof AuthError) {
+          return sendAuthError(reply, error);
+        }
+        throw error;
+      }
+    }
+  );
+
+  app.get<{ Params: { id: string }; Reply: SellerListingOffersResponse }>(
+    "/v1/seller/listings/:id/offers",
+    async (request, reply) => {
+      try {
+        const auth = await deps.authService.authenticateFromAuthorizationHeader(
+          getAuthorizationHeader(request)
+        );
+        requireSellerRole(auth.user);
+
+        return {
+          offers: deps.listingMutationService.listSellerListingOffers({
+            sellerUserId: auth.user.id,
+            listingId: request.params.id
+          })
+        };
+      } catch (error) {
+        if (error instanceof AuthError) {
+          return sendAuthError(reply, error);
+        }
+        throw error;
+      }
+    }
+  );
+
+  app.post<{ Params: { id: string }; Reply: AcceptOfferResponse }>(
+    "/v1/offers/:id/accept",
+    async (request, reply) => {
+      try {
+        const auth = await deps.authService.authenticateFromAuthorizationHeader(
+          getAuthorizationHeader(request)
+        );
+        requireSellerRole(auth.user);
+
+        return deps.listingMutationService.acceptOffer({
+          sellerUserId: auth.user.id,
+          offerId: request.params.id
+        });
+      } catch (error) {
+        if (error instanceof AuthError) {
+          return sendAuthError(reply, error);
+        }
+        throw error;
+      }
+    }
+  );
+
+  app.post<{ Params: { id: string }; Reply: DeclineOfferResponse }>(
+    "/v1/offers/:id/decline",
+    async (request, reply) => {
+      try {
+        const auth = await deps.authService.authenticateFromAuthorizationHeader(
+          getAuthorizationHeader(request)
+        );
+        requireSellerRole(auth.user);
+
+        return {
+          offer: deps.listingMutationService.declineOffer({
+            sellerUserId: auth.user.id,
+            offerId: request.params.id
           })
         };
       } catch (error) {
