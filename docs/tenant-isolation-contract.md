@@ -2,7 +2,7 @@
 
 Owner: Backend/Infra
 Related ticket: ANT-49
-Last updated: 2026-03-06
+Last updated: 2026-03-07
 
 ## Purpose
 
@@ -101,6 +101,23 @@ P3 hardening:
 - If backfill quality issues appear, keep join-based tenant checks active and gate direct-tenant reads behind a feature flag.
 - Do not drop join-based predicates until data audit confirms no null/mismatch tenant rows.
 - Maintain additive schema compatibility so rollback is disabling new predicates, not destructive migration.
+
+### ANT-52 Phase 2 rollout details
+
+- Added additive nullable `tenant_id` columns for marketplace tables (`seller_applications`, `market_sessions`, `listings`, `basket_items`, `offers`, `seller_sales`).
+- Added tenant-scoped indexes to keep read and filter paths stable during dual-write period.
+- Backfill is deterministic and idempotent:
+  - Owner-derived tables: `seller_applications`, `market_sessions`, `seller_sales` derive from `users.tenant_id`.
+  - Child-derived tables: `listings`, `basket_items`, `offers` derive from parent object tenant (`market_sessions`/`listings`) with owner fallback where needed.
+- Read switch scope in this phase:
+  - Marketplace buyer mutations use `listings.tenant_id` as primary tenant source.
+  - Seller offer inbox and seller sales export include direct `tenant_id` predicates.
+
+### ANT-52 rollback execution
+
+- Keep the additive columns and indexes in place; rollback is runtime behavior, not schema deletion.
+- Re-enable join-derived tenant checks/filters for any endpoint where direct `tenant_id` reads are suspected to be stale.
+- Re-run the backfill by invoking normal DB initialization; it updates only rows where `tenant_id IS NULL`.
 
 ## Test Coverage Plan
 

@@ -138,6 +138,7 @@ export class SellerApplicationService implements SellerApplicationDomainService 
     const fullName = normalizeText(input.fullName, "fullName", 120);
     const shopName = normalizeText(input.shopName, "shopName", 120);
     const note = normalizeOptionalText(input.note, 1000);
+    const tenant = this.resolveUserTenant(input.userId);
     const now = this.now();
 
     this.sqlite
@@ -146,6 +147,7 @@ export class SellerApplicationService implements SellerApplicationDomainService 
           INSERT INTO seller_applications (
             id,
             user_id,
+            tenant_id,
             status,
             full_name,
             shop_name,
@@ -156,8 +158,9 @@ export class SellerApplicationService implements SellerApplicationDomainService 
             reviewed_by_user_id,
             created_at,
             updated_at
-          ) VALUES (?, ?, 'pending', ?, ?, ?, NULL, ?, NULL, NULL, ?, ?)
+          ) VALUES (?, ?, ?, 'pending', ?, ?, ?, NULL, ?, NULL, NULL, ?, ?)
           ON CONFLICT(user_id) DO UPDATE SET
+            tenant_id = excluded.tenant_id,
             status = 'pending',
             full_name = excluded.full_name,
             shop_name = excluded.shop_name,
@@ -169,7 +172,7 @@ export class SellerApplicationService implements SellerApplicationDomainService 
             updated_at = excluded.updated_at
         `
       )
-      .run(newId(), input.userId, fullName, shopName, note, now, now, now);
+      .run(newId(), input.userId, tenant.tenant_id, fullName, shopName, note, now, now, now);
 
     return this.getForUser(input.userId);
   }

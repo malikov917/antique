@@ -35,10 +35,10 @@ describe("RetentionPurgeService", () => {
     dbClient.sqlite
       .prepare(
         `
-          INSERT INTO market_sessions(id, seller_user_id, status, opened_at, closed_at, created_at, updated_at)
+          INSERT INTO market_sessions(id, seller_user_id, tenant_id, status, opened_at, closed_at, created_at, updated_at)
           VALUES
-            ('session-old', 'seller-1', 'closed', 1, ?, 1, 1),
-            ('session-recent', 'seller-1', 'closed', 1, ?, 1, 1)
+            ('session-old', 'seller-1', 'tenant-1', 'closed', 1, ?, 1, 1),
+            ('session-recent', 'seller-1', 'tenant-1', 'closed', 1, ?, 1, 1)
         `
       )
       .run(oldClosedAt, recentClosedAt);
@@ -46,10 +46,10 @@ describe("RetentionPurgeService", () => {
     dbClient.sqlite
       .prepare(
         `
-          INSERT INTO listings(id, seller_user_id, market_session_id, status, created_at, updated_at)
+          INSERT INTO listings(id, seller_user_id, market_session_id, tenant_id, status, created_at, updated_at)
           VALUES
-            ('listing-old', 'seller-1', 'session-old', 'sold', 1, 1),
-            ('listing-recent', 'seller-1', 'session-recent', 'sold', 1, 1)
+            ('listing-old', 'seller-1', 'session-old', 'tenant-1', 'sold', 1, 1),
+            ('listing-recent', 'seller-1', 'session-recent', 'tenant-1', 'sold', 1, 1)
         `
       )
       .run();
@@ -57,10 +57,10 @@ describe("RetentionPurgeService", () => {
     dbClient.sqlite
       .prepare(
         `
-          INSERT INTO offers(id, listing_id, buyer_user_id, amount_cents, shipping_address, shipping_address_purged_at, status, created_at)
+          INSERT INTO offers(id, listing_id, buyer_user_id, tenant_id, amount_cents, shipping_address, shipping_address_purged_at, status, created_at)
           VALUES
-            ('offer-old', 'listing-old', 'buyer-1', 1000, '123 Reel Ave', NULL, 'submitted', 1),
-            ('offer-recent', 'listing-recent', 'buyer-1', 1500, '200 Tape St', NULL, 'submitted', 1)
+            ('offer-old', 'listing-old', 'buyer-1', 'tenant-1', 1000, '123 Reel Ave', NULL, 'submitted', 1),
+            ('offer-recent', 'listing-recent', 'buyer-1', 'tenant-1', 1500, '200 Tape St', NULL, 'submitted', 1)
         `
       )
       .run();
@@ -68,10 +68,10 @@ describe("RetentionPurgeService", () => {
     dbClient.sqlite
       .prepare(
         `
-          INSERT INTO seller_sales(id, seller_user_id, session_id, listing_id, listing_title, accepted_offer_amount_cents, currency, buyer_user_id, pii_purged_at, sold_at, created_at)
+          INSERT INTO seller_sales(id, seller_user_id, tenant_id, session_id, listing_id, listing_title, accepted_offer_amount_cents, currency, buyer_user_id, pii_purged_at, sold_at, created_at)
           VALUES
-            ('sale-old', 'seller-1', 'session-old', 'listing-old', 'Old Listing', 1000, 'USD', 'buyer-1', NULL, 1, 1),
-            ('sale-recent', 'seller-1', 'session-recent', 'listing-recent', 'Recent Listing', 1500, 'USD', 'buyer-1', NULL, 1, 1)
+            ('sale-old', 'seller-1', 'tenant-1', 'session-old', 'listing-old', 'Old Listing', 1000, 'USD', 'buyer-1', NULL, 1, 1),
+            ('sale-recent', 'seller-1', 'tenant-1', 'session-recent', 'listing-recent', 'Recent Listing', 1500, 'USD', 'buyer-1', NULL, 1, 1)
         `
       )
       .run();
@@ -151,8 +151,8 @@ describe("RetentionPurgeService", () => {
     dbClient.sqlite
       .prepare(
         `
-          INSERT INTO market_sessions(id, seller_user_id, status, opened_at, closed_at, created_at, updated_at)
-          VALUES ('session-overdue', 'seller-2', 'closed', 1, ?, 1, 1)
+          INSERT INTO market_sessions(id, seller_user_id, tenant_id, status, opened_at, closed_at, created_at, updated_at)
+          VALUES ('session-overdue', 'seller-2', 'tenant-1', 'closed', 1, ?, 1, 1)
         `
       )
       .run(now - (365 + 2) * DAY_MS);
@@ -160,8 +160,8 @@ describe("RetentionPurgeService", () => {
     dbClient.sqlite
       .prepare(
         `
-          INSERT INTO listings(id, seller_user_id, market_session_id, status, created_at, updated_at)
-          VALUES ('listing-overdue', 'seller-2', 'session-overdue', 'sold', 1, 1)
+          INSERT INTO listings(id, seller_user_id, market_session_id, tenant_id, status, created_at, updated_at)
+          VALUES ('listing-overdue', 'seller-2', 'session-overdue', 'tenant-1', 'sold', 1, 1)
         `
       )
       .run();
@@ -169,8 +169,8 @@ describe("RetentionPurgeService", () => {
     dbClient.sqlite
       .prepare(
         `
-          INSERT INTO offers(id, listing_id, buyer_user_id, amount_cents, shipping_address, shipping_address_purged_at, status, created_at)
-          VALUES ('offer-overdue', 'listing-overdue', 'buyer-2', 1999, 'Old Address', NULL, 'declined', 1)
+          INSERT INTO offers(id, listing_id, buyer_user_id, tenant_id, amount_cents, shipping_address, shipping_address_purged_at, status, created_at)
+          VALUES ('offer-overdue', 'listing-overdue', 'buyer-2', 'tenant-1', 1999, 'Old Address', NULL, 'declined', 1)
         `
       )
       .run();
