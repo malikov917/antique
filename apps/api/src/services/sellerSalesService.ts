@@ -1,7 +1,12 @@
-import type { AuthRole, AuthUser } from "@antique/types";
+import type { AuthRole } from "@antique/types";
 import type { Database } from "better-sqlite3";
 import { AuthError } from "../auth/errors.js";
 import { newId } from "../auth/crypto.js";
+import type {
+  ExportSalesCsvInput,
+  ExportSalesCsvResult,
+  SellerSalesDomainService
+} from "../domain/seller/contracts.js";
 
 interface SellerSalesRow {
   seller_user_id: string;
@@ -24,18 +29,7 @@ interface ExportAuditEvent {
   metadata: Record<string, unknown>;
 }
 
-export interface ExportSalesCsvInput {
-  actor: AuthUser;
-  requestedSellerUserId?: string;
-  requestIp?: string;
-}
-
-export interface ExportSalesCsvResult {
-  csv: string;
-  fileName: string;
-}
-
-export class SellerSalesService {
+export class SellerSalesService implements SellerSalesDomainService {
   constructor(
     private readonly sqlite: Database,
     private readonly now: () => number = () => Date.now()

@@ -9,11 +9,15 @@ import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import { AuthError } from "../auth/errors.js";
 import { requireBuyerRole, requireSellerRole } from "../auth/guards.js";
 import { type AuthService } from "../services/authService.js";
-import { type MarketplaceService } from "../services/marketplaceService.js";
+import type {
+  ListingMutationDomainService,
+  MarketSessionDomainService
+} from "../domain/marketplace/contracts.js";
 
 interface MarketplaceRouteDeps {
   authService: AuthService;
-  marketplaceService: MarketplaceService;
+  marketSessionService: MarketSessionDomainService;
+  listingMutationService: ListingMutationDomainService;
 }
 
 function sendAuthError(reply: FastifyReply, error: AuthError): ReturnType<FastifyReply["send"]> {
@@ -51,7 +55,7 @@ export async function registerMarketplaceRoutes(
       requireSellerRole(auth.user);
 
       return {
-        session: deps.marketplaceService.openMarketSession(auth.user.id)
+        session: deps.marketSessionService.openMarketSession(auth.user.id)
       };
     } catch (error) {
       if (error instanceof AuthError) {
@@ -70,7 +74,7 @@ export async function registerMarketplaceRoutes(
         );
         requireSellerRole(auth.user);
 
-        return deps.marketplaceService.closeMarketSession({
+        return deps.marketSessionService.closeMarketSession({
           sellerUserId: auth.user.id,
           sessionId: request.params.id
         });
@@ -93,7 +97,7 @@ export async function registerMarketplaceRoutes(
         requireBuyerRole(auth.user);
 
         return {
-          basketItem: deps.marketplaceService.createBasketItem({
+          basketItem: deps.listingMutationService.createBasketItem({
             buyerUserId: auth.user.id,
             listingId: request.params.id
           })
@@ -125,7 +129,7 @@ export async function registerMarketplaceRoutes(
         }
 
         return {
-          offer: deps.marketplaceService.createOffer({
+          offer: deps.listingMutationService.createOffer({
             buyerUserId: auth.user.id,
             listingId: request.params.id,
             amountCents: body.amountCents as number,

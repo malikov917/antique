@@ -2,6 +2,10 @@ import type { Database } from "better-sqlite3";
 import { type SellerApplication, type SellerApplicationStatus } from "@antique/types";
 import { AuthError } from "../auth/errors.js";
 import { newId } from "../auth/crypto.js";
+import type {
+  SellerApplicationDomainService,
+  SubmitSellerApplicationInput
+} from "../domain/seller/contracts.js";
 
 interface SellerApplicationRow {
   id: string;
@@ -15,13 +19,6 @@ interface SellerApplicationRow {
   reviewed_at: number | null;
   created_at: number;
   updated_at: number;
-}
-
-export interface SubmitSellerApplicationInput {
-  userId: string;
-  fullName: string;
-  shopName: string;
-  note?: string;
 }
 
 function toIso(timestampMs: number | null): string | null {
@@ -53,7 +50,7 @@ function normalizeOptionalText(value: string | undefined, maxLength: number): st
   return trimmed;
 }
 
-export class SellerApplicationService {
+export class SellerApplicationService implements SellerApplicationDomainService {
   constructor(
     private readonly sqlite: Database,
     private readonly now: () => number = () => Date.now()
