@@ -9,6 +9,7 @@ import { registerWebhookRoutes } from "./routes/webhook.js";
 import { registerAuthRoutes } from "./routes/auth.js";
 import { registerSellerRoutes } from "./routes/seller.js";
 import { registerMeRoutes } from "./routes/me.js";
+import { registerMarketplaceRoutes } from "./routes/marketplace.js";
 import { type ApiConfig } from "./config.js";
 import { createDatabaseClient, type DatabaseClient } from "./db/client.js";
 import { initializeDatabase } from "./db/init.js";
@@ -17,6 +18,7 @@ import { MuxVideoService, type MuxClient } from "./services/videoProvider.js";
 import { AuthService, type SmsProvider } from "./services/authService.js";
 import { LoggingSmsProvider } from "./services/smsProvider.js";
 import { SellerApplicationService } from "./services/sellerApplicationService.js";
+import { MarketplaceService } from "./services/marketplaceService.js";
 
 export interface BuildServerParams {
   config: ApiConfig;
@@ -68,6 +70,7 @@ export async function buildServer(params: BuildServerParams): Promise<FastifyIns
     params.now
   );
   const sellerApplicationService = new SellerApplicationService(dbClient.sqlite, params.now);
+  const marketplaceService = new MarketplaceService(dbClient.sqlite, params.now);
 
   await app.register(cors, { origin: true });
   await app.register(multipart);
@@ -95,6 +98,10 @@ export async function buildServer(params: BuildServerParams): Promise<FastifyIns
   await registerSellerRoutes(app, {
     authService,
     sellerApplicationService
+  });
+  await registerMarketplaceRoutes(app, {
+    authService,
+    marketplaceService
   });
   await registerWebhookRoutes(app, {
     muxWebhookSecret: params.config.muxWebhookSecret,

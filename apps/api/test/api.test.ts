@@ -81,6 +81,15 @@ async function createAuthenticatedBuyer(
   smsProvider: TestSmsProvider,
   phone = "+14155552671"
 ): Promise<string> {
+  const auth = await createAuthenticatedUser(app, smsProvider, phone);
+  return auth.accessToken;
+}
+
+async function createAuthenticatedUser(
+  app: Awaited<ReturnType<typeof buildServer>>,
+  smsProvider: TestSmsProvider,
+  phone: string
+): Promise<{ userId: string; accessToken: string }> {
   await app.inject({
     method: "POST",
     url: "/v1/auth/otp/request",
@@ -99,7 +108,37 @@ async function createAuthenticatedBuyer(
     }
   });
 
-  return verifyResponse.json().tokens.accessToken as string;
+  const verifyPayload = verifyResponse.json();
+  return {
+    userId: verifyPayload.user.id as string,
+    accessToken: verifyPayload.tokens.accessToken as string
+  };
+}
+
+async function createAuthenticatedSeller(
+  app: Awaited<ReturnType<typeof buildServer>>,
+  smsProvider: TestSmsProvider,
+  dbClient: ReturnType<typeof createDatabaseClient>,
+  phone = "+14155552672"
+): Promise<{ userId: string; accessToken: string }> {
+  const auth = await createAuthenticatedUser(app, smsProvider, phone);
+  dbClient.sqlite
+    .prepare("UPDATE users SET allowed_roles = ? WHERE id = ?")
+    .run(JSON.stringify(["buyer", "seller"]), auth.userId);
+
+  const switched = await app.inject({
+    method: "POST",
+    url: "/v1/me/role-switch",
+    headers: {
+      authorization: `Bearer ${auth.accessToken}`
+    },
+    payload: {
+      role: "seller"
+    }
+  });
+  expect(switched.statusCode).toBe(200);
+
+  return auth;
 }
 
 describe("api", () => {
@@ -891,6 +930,152 @@ describe("auth api", () => {
         fullName: "Ada Lovelace",
         shopName: "Reel Revival"
       }
+    });
+
+    await app.close();
+  });
+
+  it("opens and closes market session and transitions live listings to day_closed", async () => {
+    const smsProvider = new TestSmsProvider();
+    const dbClient = createDatabaseClient(":memory:");
+    const app = await buildServer({
+      config: buildTestConfig(),
+      smsProvider,
+      muxClient: buildMockMuxClient(),
+      dbClient
+    });
+
+    const seller = await createAuthenticatedSeller(app, smsProvider, dbClient);
+    const openResponse = await app.inject({
+      method: "POST",
+      url: "/v1/seller/sessions/open",
+      headers: {
+        authorization: `Bearer ${seller.accessToken}`
+      }
+    });
+    expect(openResponse.statusCode).toBe(200);
+    expect(openResponse.json()).toMatchObject({
+      session: {
+        status: "open",
+        sellerUserId: seller.userId
+      }
+    });
+    const sessionId = openResponse.json().session.id as string;
+
+    const secondOpenResponse = await app.inject({
+      method: "POST",
+      url: "/v1/seller/sessions/open",
+      headers: {
+        authorization: `Bearer ${seller.accessToken}`
+      }
+    });
+    expect(secondOpenResponse.statusCode).toBe(409);
+    expect(secondOpenResponse.json()).toMatchObject({
+      code: "market_session_already_open"
+    });
+
+    dbClient.sqlite
+      .prepare(
+        `
+          INSERT INTO listings (id, seller_user_id, market_session_id, status, created_at, updated_at)
+          VALUES
+            ('listing-live-1', ?, ?, 'live', 1, 1),
+            ('listing-sold-1', ?, ?, 'sold', 1, 1)
+        `
+      )
+      .run(seller.userId, sessionId, seller.userId, sessionId);
+
+    const closeResponse = await app.inject({
+      method: "POST",
+      url: `/v1/seller/sessions/${sessionId}/close`,
+      headers: {
+        authorization: `Bearer ${seller.accessToken}`
+      }
+    });
+    expect(closeResponse.statusCode).toBe(200);
+    expect(closeResponse.json()).toMatchObject({
+      transitionedListingCount: 1,
+      session: {
+        id: sessionId,
+        status: "closed"
+      }
+    });
+
+    const listingRows = dbClient.sqlite
+      .prepare("SELECT id, status FROM listings ORDER BY id")
+      .all() as Array<{ id: string; status: string }>;
+    expect(listingRows).toEqual([
+      { id: "listing-live-1", status: "day_closed" },
+      { id: "listing-sold-1", status: "sold" }
+    ]);
+
+    await app.close();
+  });
+
+  it("blocks basket and offer mutations for day_closed listings", async () => {
+    const smsProvider = new TestSmsProvider();
+    const dbClient = createDatabaseClient(":memory:");
+    const app = await buildServer({
+      config: buildTestConfig(),
+      smsProvider,
+      muxClient: buildMockMuxClient(),
+      dbClient
+    });
+
+    const seller = await createAuthenticatedSeller(app, smsProvider, dbClient, "+14155552673");
+    const buyer = await createAuthenticatedUser(app, smsProvider, "+14155552674");
+
+    const openResponse = await app.inject({
+      method: "POST",
+      url: "/v1/seller/sessions/open",
+      headers: {
+        authorization: `Bearer ${seller.accessToken}`
+      }
+    });
+    const sessionId = openResponse.json().session.id as string;
+    dbClient.sqlite
+      .prepare(
+        `
+          INSERT INTO listings (id, seller_user_id, market_session_id, status, created_at, updated_at)
+          VALUES ('listing-live-2', ?, ?, 'live', 1, 1)
+        `
+      )
+      .run(seller.userId, sessionId);
+
+    await app.inject({
+      method: "POST",
+      url: `/v1/seller/sessions/${sessionId}/close`,
+      headers: {
+        authorization: `Bearer ${seller.accessToken}`
+      }
+    });
+
+    const basketResponse = await app.inject({
+      method: "POST",
+      url: "/v1/listings/listing-live-2/basket",
+      headers: {
+        authorization: `Bearer ${buyer.accessToken}`
+      }
+    });
+    expect(basketResponse.statusCode).toBe(409);
+    expect(basketResponse.json()).toMatchObject({
+      code: "listing_day_closed"
+    });
+
+    const offerResponse = await app.inject({
+      method: "POST",
+      url: "/v1/listings/listing-live-2/offers",
+      headers: {
+        authorization: `Bearer ${buyer.accessToken}`
+      },
+      payload: {
+        amountCents: 25000,
+        shippingAddress: "123 Antique Row"
+      }
+    });
+    expect(offerResponse.statusCode).toBe(409);
+    expect(offerResponse.json()).toMatchObject({
+      code: "listing_day_closed"
     });
 
     await app.close();

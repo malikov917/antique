@@ -78,6 +78,60 @@ export function initializeDatabase(sqlite: Database): void {
     );
 
     CREATE INDEX IF NOT EXISTS idx_seller_applications_status ON seller_applications(status);
+
+    CREATE TABLE IF NOT EXISTS market_sessions (
+      id TEXT PRIMARY KEY,
+      seller_user_id TEXT NOT NULL,
+      status TEXT NOT NULL,
+      opened_at INTEGER NOT NULL,
+      closed_at INTEGER,
+      created_at INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL,
+      FOREIGN KEY (seller_user_id) REFERENCES users(id)
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_market_sessions_seller_status
+      ON market_sessions(seller_user_id, status);
+
+    CREATE TABLE IF NOT EXISTS listings (
+      id TEXT PRIMARY KEY,
+      seller_user_id TEXT NOT NULL,
+      market_session_id TEXT NOT NULL,
+      status TEXT NOT NULL,
+      created_at INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL,
+      FOREIGN KEY (seller_user_id) REFERENCES users(id),
+      FOREIGN KEY (market_session_id) REFERENCES market_sessions(id)
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_listings_session_status
+      ON listings(market_session_id, status);
+
+    CREATE TABLE IF NOT EXISTS basket_items (
+      id TEXT PRIMARY KEY,
+      listing_id TEXT NOT NULL,
+      buyer_user_id TEXT NOT NULL,
+      created_at INTEGER NOT NULL,
+      FOREIGN KEY (listing_id) REFERENCES listings(id),
+      FOREIGN KEY (buyer_user_id) REFERENCES users(id)
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_basket_items_listing_user
+      ON basket_items(listing_id, buyer_user_id);
+
+    CREATE TABLE IF NOT EXISTS offers (
+      id TEXT PRIMARY KEY,
+      listing_id TEXT NOT NULL,
+      buyer_user_id TEXT NOT NULL,
+      amount_cents INTEGER NOT NULL,
+      shipping_address TEXT NOT NULL,
+      status TEXT NOT NULL,
+      created_at INTEGER NOT NULL,
+      FOREIGN KEY (listing_id) REFERENCES listings(id),
+      FOREIGN KEY (buyer_user_id) REFERENCES users(id)
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_offers_listing_status ON offers(listing_id, status);
   `);
 
   const userColumns = sqlite.prepare("PRAGMA table_info(users)").all() as Array<{ name: string }>;
