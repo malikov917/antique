@@ -1,6 +1,7 @@
 import type { Database } from "better-sqlite3";
 import { type AuthRole, type SellerApplication, type SellerApplicationStatus } from "@antique/types";
 import { AuthError } from "../auth/errors.js";
+import { requireTenantScope } from "../auth/guards.js";
 import { newId } from "../auth/crypto.js";
 import type {
   RejectSellerApplicationInput,
@@ -28,6 +29,11 @@ interface UserRoleRow {
   allowed_roles: string;
   active_role: AuthRole;
   seller_profile_id: string | null;
+}
+
+interface UserTenantRow {
+  id: string;
+  tenant_id: string;
 }
 
 function toIso(timestampMs: number | null): string | null {
@@ -188,6 +194,10 @@ export class SellerApplicationService implements SellerApplicationDomainService 
       throw new AuthError("not_found", "User was not found", 404);
     }
 
+    const actorTenant = this.resolveUserTenant(input.actorUserId);
+    const targetTenant = this.resolveUserTenant(input.targetUserId);
+    requireTenantScope(targetTenant.tenant_id, actorTenant.tenant_id);
+
     const now = this.now();
     const run = this.sqlite.transaction(() => {
       const row = this.sqlite
@@ -279,6 +289,24 @@ export class SellerApplicationService implements SellerApplicationDomainService 
     }
 
     return this.getForUser(input.targetUserId);
+  }
+
+  private resolveUserTenant(userId: string): UserTenantRow {
+    const row = this.sqlite
+      .prepare(
+        `
+          SELECT id, tenant_id
+          FROM users
+          WHERE id = ?
+          LIMIT 1
+        `
+      )
+      .get(userId) as UserTenantRow | undefined;
+
+    if (!row) {
+      throw new AuthError("not_found", "User was not found", 404);
+    }
+    return row;
   }
 
   private enableSellerRole(userId: string): void {

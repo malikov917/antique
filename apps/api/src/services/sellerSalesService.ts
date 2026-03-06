@@ -1,6 +1,7 @@
 import type { AuthRole } from "@antique/types";
 import type { Database } from "better-sqlite3";
 import { AuthError } from "../auth/errors.js";
+import { requireTenantScope } from "../auth/guards.js";
 import { newId } from "../auth/crypto.js";
 import type {
   ExportSalesCsvInput,
@@ -88,8 +89,25 @@ export class SellerSalesService implements SellerSalesDomainService {
     }
 
     const targetSellerUserId = requestedSellerUserId ?? input.actor.id;
-    const rows = this.fetchSellerSalesRows(targetSellerUserId);
+    const targetSellerTenantId = this.resolveUserTenantId(targetSellerUserId);
+    try {
+      requireTenantScope(targetSellerTenantId, input.actor.tenantId);
+    } catch (error) {
+      if (error instanceof AuthError && error.code === "forbidden_tenant_scope") {
+        this.recordAuditEvent({
+          actorUserId: input.actor.id,
+          actorRole: input.actor.activeRole,
+          targetSellerUserId,
+          outcome: "denied",
+          reasonCode: "forbidden_tenant_scope",
+          requestIp: input.requestIp ?? null,
+          metadata: {}
+        });
+      }
+      throw error;
+    }
 
+    const rows = this.fetchSellerSalesRows(targetSellerUserId);
     this.recordAuditEvent({
       actorUserId: input.actor.id,
       actorRole: input.actor.activeRole,
@@ -135,6 +153,17 @@ export class SellerSalesService implements SellerSalesDomainService {
         `
       )
       .all(sellerUserId) as SellerSalesRow[];
+  }
+
+  private resolveUserTenantId(userId: string): string {
+    const row = this.sqlite
+      .prepare("SELECT tenant_id FROM users WHERE id = ? LIMIT 1")
+      .get(userId) as { tenant_id: string } | undefined;
+
+    if (!row) {
+      throw new AuthError("not_found", "User was not found", 404);
+    }
+    return row.tenant_id;
   }
 
   private toCsv(rows: SellerSalesRow[]): string {

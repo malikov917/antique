@@ -7,6 +7,7 @@ import type {
   Offer
 } from "@antique/types";
 import { AuthError } from "../auth/errors.js";
+import { requireTenantScope } from "../auth/guards.js";
 import { newId } from "../auth/crypto.js";
 import type {
   ListingMutationDomainService,
@@ -29,6 +30,7 @@ interface ListingAvailabilityRow {
   id: string;
   status: ListingStatus;
   session_status: MarketSessionStatus;
+  seller_tenant_id: string;
 }
 
 interface OfferRow {
@@ -211,7 +213,7 @@ export class MarketplaceService
   }
 
   createBasketItem(params: { buyerUserId: string; listingId: string }): BasketItem {
-    this.assertListingAllowsBuyerMutation(params.listingId);
+    this.assertListingAllowsBuyerMutation(params.listingId, params.buyerUserId);
     const id = newId();
     const timestamp = this.now();
     this.sqlite
@@ -237,7 +239,7 @@ export class MarketplaceService
     amountCents: number;
     shippingAddress: string;
   }): Offer {
-    this.assertListingAllowsBuyerMutation(params.listingId);
+    this.assertListingAllowsBuyerMutation(params.listingId, params.buyerUserId);
     const id = newId();
     const timestamp = this.now();
     this.sqlite
@@ -411,16 +413,18 @@ export class MarketplaceService
     return tx(params.sellerUserId, params.offerId);
   }
 
-  private assertListingAllowsBuyerMutation(listingId: string): void {
+  private assertListingAllowsBuyerMutation(listingId: string, buyerUserId: string): void {
     const row = this.sqlite
       .prepare(
         `
           SELECT
             listings.id,
             listings.status,
-            market_sessions.status AS session_status
+            market_sessions.status AS session_status,
+            seller_user.tenant_id AS seller_tenant_id
           FROM listings
           INNER JOIN market_sessions ON market_sessions.id = listings.market_session_id
+          INNER JOIN users AS seller_user ON seller_user.id = listings.seller_user_id
           WHERE listings.id = ?
           LIMIT 1
         `
@@ -436,6 +440,15 @@ export class MarketplaceService
     if (row.status === "sold" || row.status === "withdrawn") {
       throw new AuthError("listing_unavailable", "Listing is no longer available", 409);
     }
+
+    const buyerTenant = this.sqlite
+      .prepare("SELECT tenant_id FROM users WHERE id = ? LIMIT 1")
+      .get(buyerUserId) as { tenant_id: string } | undefined;
+
+    if (!buyerTenant) {
+      throw new AuthError("forbidden_tenant_scope", "Buyer tenant could not be resolved", 403);
+    }
+    requireTenantScope(row.seller_tenant_id, buyerTenant.tenant_id);
   }
 
   private assertListingOwnedBySeller(listingId: string, sellerUserId: string): void {
