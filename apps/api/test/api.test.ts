@@ -141,6 +141,37 @@ async function createAuthenticatedSeller(
   return auth;
 }
 
+async function createAuthenticatedSession(
+  app: Awaited<ReturnType<typeof buildServer>>,
+  smsProvider: TestSmsProvider,
+  phone: string,
+  deviceId: string
+): Promise<{ accessToken: string; userId: string }> {
+  await app.inject({
+    method: "POST",
+    url: "/v1/auth/otp/request",
+    payload: { phone }
+  });
+
+  const code = smsProvider.getLastCode(phone);
+  const verifyResponse = await app.inject({
+    method: "POST",
+    url: "/v1/auth/otp/verify",
+    payload: {
+      phone,
+      code,
+      deviceId,
+      platform: "ios"
+    }
+  });
+
+  const payload = verifyResponse.json();
+  return {
+    accessToken: payload.tokens.accessToken as string,
+    userId: payload.user.id as string
+  };
+}
+
 describe("api", () => {
   const secret = "whsec_test";
   let app: Awaited<ReturnType<typeof buildServer>>;
@@ -1096,6 +1127,205 @@ describe("auth api", () => {
     expect(response.statusCode).toBe(401);
     expect(response.json()).toMatchObject({
       code: "missing_access_token"
+    });
+
+    await app.close();
+  });
+
+  it("enforces seller sales CSV export auth matrix", async () => {
+    const smsProvider = new TestSmsProvider();
+    const dbClient = createDatabaseClient(":memory:");
+    const app = await buildServer({
+      config: buildTestConfig(),
+      smsProvider,
+      muxClient: buildMockMuxClient(),
+      dbClient
+    });
+
+    const seller = await createAuthenticatedSession(
+      app,
+      smsProvider,
+      "+14155550001",
+      "ios-device-sales-seller"
+    );
+    const buyer = await createAuthenticatedSession(
+      app,
+      smsProvider,
+      "+14155550002",
+      "ios-device-sales-buyer"
+    );
+    const admin = await createAuthenticatedSession(
+      app,
+      smsProvider,
+      "+14155550003",
+      "ios-device-sales-admin"
+    );
+    const otherSeller = await createAuthenticatedSession(
+      app,
+      smsProvider,
+      "+14155550004",
+      "ios-device-sales-other-seller"
+    );
+
+    dbClient.sqlite
+      .prepare("UPDATE users SET allowed_roles = ?, active_role = ? WHERE id = ?")
+      .run(JSON.stringify(["buyer", "seller"]), "seller", seller.userId);
+    dbClient.sqlite
+      .prepare("UPDATE users SET allowed_roles = ?, active_role = ? WHERE id = ?")
+      .run(JSON.stringify(["buyer"]), "buyer", buyer.userId);
+    dbClient.sqlite
+      .prepare("UPDATE users SET allowed_roles = ?, active_role = ? WHERE id = ?")
+      .run(JSON.stringify(["buyer", "admin"]), "admin", admin.userId);
+    dbClient.sqlite
+      .prepare("UPDATE users SET allowed_roles = ?, active_role = ? WHERE id = ?")
+      .run(JSON.stringify(["buyer", "seller"]), "seller", otherSeller.userId);
+
+    dbClient.sqlite
+      .prepare(
+        `
+          INSERT INTO seller_sales(
+            id,
+            seller_user_id,
+            session_id,
+            listing_id,
+            listing_title,
+            accepted_offer_amount_cents,
+            currency,
+            buyer_user_id,
+            sold_at,
+            created_at
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `
+      )
+      .run("sale-1", seller.userId, "session-1", "listing-1", "Rare Film Reel", 12000, "USD", buyer.userId, Date.now(), Date.now());
+
+    const sellerExport = await app.inject({
+      method: "GET",
+      url: "/v1/seller/sales.csv",
+      headers: {
+        authorization: `Bearer ${seller.accessToken}`
+      }
+    });
+    expect(sellerExport.statusCode).toBe(200);
+    expect(sellerExport.headers["content-type"]).toContain("text/csv");
+    expect(sellerExport.body).toContain("Rare Film Reel");
+
+    const foreignSellerExport = await app.inject({
+      method: "GET",
+      url: `/v1/seller/sales.csv?sellerUserId=${otherSeller.userId}`,
+      headers: {
+        authorization: `Bearer ${seller.accessToken}`
+      }
+    });
+    expect(foreignSellerExport.statusCode).toBe(403);
+    expect(foreignSellerExport.json()).toMatchObject({
+      code: "forbidden_export_scope"
+    });
+
+    const buyerExport = await app.inject({
+      method: "GET",
+      url: "/v1/seller/sales.csv",
+      headers: {
+        authorization: `Bearer ${buyer.accessToken}`
+      }
+    });
+    expect(buyerExport.statusCode).toBe(403);
+    expect(buyerExport.json()).toMatchObject({
+      code: "forbidden_export_role"
+    });
+
+    const adminExport = await app.inject({
+      method: "GET",
+      url: `/v1/seller/sales.csv?sellerUserId=${seller.userId}`,
+      headers: {
+        authorization: `Bearer ${admin.accessToken}`
+      }
+    });
+    expect(adminExport.statusCode).toBe(200);
+    expect(adminExport.body).toContain("Rare Film Reel");
+
+    const auditRows = dbClient.sqlite
+      .prepare(
+        `
+          SELECT event_type, actor_user_id, actor_role, target_seller_user_id, outcome, reason_code, metadata_json
+          FROM audit_events
+          WHERE event_type = 'seller_sales_csv_export'
+          ORDER BY created_at ASC
+        `
+      )
+      .all() as Array<{
+      event_type: string;
+      actor_user_id: string;
+      actor_role: string;
+      target_seller_user_id: string | null;
+      outcome: string;
+      reason_code: string;
+      metadata_json: string;
+    }>;
+
+    expect(auditRows).toHaveLength(4);
+    const allowedCount = auditRows.filter((row) => row.outcome === "allowed").length;
+    const deniedCount = auditRows.filter((row) => row.outcome === "denied").length;
+    expect(allowedCount).toBe(2);
+    expect(deniedCount).toBe(2);
+    const reasonCodes = new Set(auditRows.map((row) => row.reason_code));
+    expect(reasonCodes.has("export_allowed")).toBe(true);
+    expect(reasonCodes.has("forbidden_export_scope")).toBe(true);
+    expect(reasonCodes.has("forbidden_export_role")).toBe(true);
+    expect(auditRows.every((row) => !row.metadata_json.includes("address"))).toBe(true);
+
+    await app.close();
+  });
+
+  it("denies suspended sellers and records denial audit event", async () => {
+    const smsProvider = new TestSmsProvider();
+    const dbClient = createDatabaseClient(":memory:");
+    const app = await buildServer({
+      config: buildTestConfig(),
+      smsProvider,
+      muxClient: buildMockMuxClient(),
+      dbClient
+    });
+
+    const seller = await createAuthenticatedSession(
+      app,
+      smsProvider,
+      "+14155550009",
+      "ios-device-sales-suspended-seller"
+    );
+
+    dbClient.sqlite
+      .prepare("UPDATE users SET allowed_roles = ?, active_role = ?, suspended_at = ? WHERE id = ?")
+      .run(JSON.stringify(["buyer", "seller"]), "seller", Date.now(), seller.userId);
+
+    const response = await app.inject({
+      method: "GET",
+      url: "/v1/seller/sales.csv",
+      headers: {
+        authorization: `Bearer ${seller.accessToken}`
+      }
+    });
+
+    expect(response.statusCode).toBe(403);
+    expect(response.json()).toMatchObject({
+      code: "forbidden_seller_suspended"
+    });
+
+    const auditRow = dbClient.sqlite
+      .prepare(
+        `
+          SELECT reason_code, outcome
+          FROM audit_events
+          WHERE event_type = 'seller_sales_csv_export'
+          ORDER BY created_at DESC
+          LIMIT 1
+        `
+      )
+      .get() as { reason_code: string; outcome: string } | undefined;
+
+    expect(auditRow).toMatchObject({
+      reason_code: "forbidden_seller_suspended",
+      outcome: "denied"
     });
 
     await app.close();

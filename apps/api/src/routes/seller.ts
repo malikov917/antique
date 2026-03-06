@@ -7,10 +7,12 @@ import type { FastifyInstance, FastifyReply } from "fastify";
 import { AuthError } from "../auth/errors.js";
 import { type AuthService } from "../services/authService.js";
 import { type SellerApplicationService } from "../services/sellerApplicationService.js";
+import { type SellerSalesService } from "../services/sellerSalesService.js";
 
 interface SellerRouteDeps {
   authService: AuthService;
   sellerApplicationService: SellerApplicationService;
+  sellerSalesService: SellerSalesService;
 }
 
 function sendAuthError(reply: FastifyReply, error: AuthError): ReturnType<FastifyReply["send"]> {
@@ -43,6 +45,29 @@ export async function registerSellerRoutes(
   app: FastifyInstance,
   deps: SellerRouteDeps
 ): Promise<void> {
+  app.get("/v1/seller/sales.csv", async (request, reply) => {
+    try {
+      const accessToken = extractBearerToken(request.headers.authorization);
+      const user = await deps.authService.authenticateAccessToken(accessToken);
+      const query = (request.query ?? {}) as { sellerUserId?: string };
+      const result = deps.sellerSalesService.exportSalesCsv({
+        actor: user,
+        requestedSellerUserId: query.sellerUserId,
+        requestIp: request.ip
+      });
+
+      return reply
+        .header("content-type", "text/csv; charset=utf-8")
+        .header("content-disposition", `attachment; filename="${result.fileName}"`)
+        .send(result.csv);
+    } catch (error) {
+      if (error instanceof AuthError) {
+        return sendAuthError(reply, error);
+      }
+      throw error;
+    }
+  });
+
   app.get<{ Reply: SellerApplicationResponse }>("/v1/seller/application", async (request, reply) => {
     try {
       const accessToken = extractBearerToken(request.headers.authorization);
