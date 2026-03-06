@@ -2,6 +2,7 @@ import { createHmac } from "node:crypto";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { buildServer } from "../src/server.js";
 import { type ApiConfig } from "../src/config.js";
+import { createDatabaseClient } from "../src/db/client.js";
 import { type SmsProvider } from "../src/services/authService.js";
 import { type MuxClient } from "../src/services/videoProvider.js";
 
@@ -397,6 +398,232 @@ describe("auth api", () => {
       },
       tokens: {
         tokenType: "Bearer"
+      }
+    });
+
+    await app.close();
+  });
+
+  it("returns /v1/me for authenticated user", async () => {
+    const smsProvider = new TestSmsProvider();
+    const app = await buildServer({
+      config: buildTestConfig(),
+      smsProvider,
+      muxClient: buildMockMuxClient()
+    });
+
+    await app.inject({
+      method: "POST",
+      url: "/v1/auth/otp/request",
+      payload: { phone: "+14155552671" }
+    });
+    const code = smsProvider.getLastCode("+14155552671");
+    const verify = await app.inject({
+      method: "POST",
+      url: "/v1/auth/otp/verify",
+      payload: {
+        phone: "+14155552671",
+        code,
+        deviceId: "ios-device-me-1",
+        platform: "ios"
+      }
+    });
+    const accessToken = verify.json().tokens.accessToken as string;
+
+    const meResponse = await app.inject({
+      method: "GET",
+      url: "/v1/me",
+      headers: {
+        authorization: `Bearer ${accessToken}`
+      }
+    });
+
+    expect(meResponse.statusCode).toBe(200);
+    expect(meResponse.json()).toMatchObject({
+      user: {
+        phone: "+14155552671",
+        displayName: null,
+        activeRole: "buyer"
+      }
+    });
+
+    await app.close();
+  });
+
+  it("updates /v1/me display name with validation", async () => {
+    const smsProvider = new TestSmsProvider();
+    const app = await buildServer({
+      config: buildTestConfig(),
+      smsProvider,
+      muxClient: buildMockMuxClient()
+    });
+
+    await app.inject({
+      method: "POST",
+      url: "/v1/auth/otp/request",
+      payload: { phone: "+14155552671" }
+    });
+    const code = smsProvider.getLastCode("+14155552671");
+    const verify = await app.inject({
+      method: "POST",
+      url: "/v1/auth/otp/verify",
+      payload: {
+        phone: "+14155552671",
+        code,
+        deviceId: "ios-device-me-2",
+        platform: "ios"
+      }
+    });
+    const accessToken = verify.json().tokens.accessToken as string;
+
+    const patched = await app.inject({
+      method: "PATCH",
+      url: "/v1/me",
+      headers: {
+        authorization: `Bearer ${accessToken}`
+      },
+      payload: {
+        displayName: "  Vintage Buyer  "
+      }
+    });
+    expect(patched.statusCode).toBe(200);
+    expect(patched.json()).toMatchObject({
+      user: {
+        displayName: "Vintage Buyer"
+      }
+    });
+
+    const invalid = await app.inject({
+      method: "PATCH",
+      url: "/v1/me",
+      headers: {
+        authorization: `Bearer ${accessToken}`
+      },
+      payload: {
+        displayName: " ".repeat(81)
+      }
+    });
+    expect(invalid.statusCode).toBe(400);
+    expect(invalid.json()).toMatchObject({
+      code: "invalid_display_name"
+    });
+
+    await app.close();
+  });
+
+  it("rejects /v1/me without authorization", async () => {
+    const app = await buildServer({
+      config: buildTestConfig(),
+      smsProvider: new TestSmsProvider(),
+      muxClient: buildMockMuxClient()
+    });
+
+    const response = await app.inject({
+      method: "GET",
+      url: "/v1/me"
+    });
+
+    expect(response.statusCode).toBe(401);
+    expect(response.json()).toMatchObject({
+      code: "missing_authorization"
+    });
+
+    await app.close();
+  });
+
+  it("forbids role switch when role is not allowed", async () => {
+    const smsProvider = new TestSmsProvider();
+    const app = await buildServer({
+      config: buildTestConfig(),
+      smsProvider,
+      muxClient: buildMockMuxClient()
+    });
+
+    await app.inject({
+      method: "POST",
+      url: "/v1/auth/otp/request",
+      payload: { phone: "+14155552671" }
+    });
+    const code = smsProvider.getLastCode("+14155552671");
+    const verify = await app.inject({
+      method: "POST",
+      url: "/v1/auth/otp/verify",
+      payload: {
+        phone: "+14155552671",
+        code,
+        deviceId: "ios-device-role-1",
+        platform: "ios"
+      }
+    });
+    const accessToken = verify.json().tokens.accessToken as string;
+
+    const roleSwitch = await app.inject({
+      method: "POST",
+      url: "/v1/me/role-switch",
+      headers: {
+        authorization: `Bearer ${accessToken}`
+      },
+      payload: {
+        role: "seller"
+      }
+    });
+
+    expect(roleSwitch.statusCode).toBe(403);
+    expect(roleSwitch.json()).toMatchObject({
+      code: "forbidden_role_switch"
+    });
+
+    await app.close();
+  });
+
+  it("switches active role when role is allowed", async () => {
+    const smsProvider = new TestSmsProvider();
+    const dbClient = createDatabaseClient(":memory:");
+    const app = await buildServer({
+      config: buildTestConfig(),
+      smsProvider,
+      muxClient: buildMockMuxClient(),
+      dbClient
+    });
+
+    await app.inject({
+      method: "POST",
+      url: "/v1/auth/otp/request",
+      payload: { phone: "+14155552671" }
+    });
+    const code = smsProvider.getLastCode("+14155552671");
+    const verify = await app.inject({
+      method: "POST",
+      url: "/v1/auth/otp/verify",
+      payload: {
+        phone: "+14155552671",
+        code,
+        deviceId: "ios-device-role-2",
+        platform: "ios"
+      }
+    });
+
+    const verifyPayload = verify.json();
+    const accessToken = verifyPayload.tokens.accessToken as string;
+    const userId = verifyPayload.user.id as string;
+    dbClient.sqlite
+      .prepare("UPDATE users SET allowed_roles = ? WHERE id = ?")
+      .run(JSON.stringify(["buyer", "seller"]), userId);
+
+    const roleSwitch = await app.inject({
+      method: "POST",
+      url: "/v1/me/role-switch",
+      headers: {
+        authorization: `Bearer ${accessToken}`
+      },
+      payload: {
+        role: "seller"
+      }
+    });
+    expect(roleSwitch.statusCode).toBe(200);
+    expect(roleSwitch.json()).toMatchObject({
+      user: {
+        activeRole: "seller"
       }
     });
 

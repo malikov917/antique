@@ -40,6 +40,7 @@ export type AuthPlatform = "ios" | "android";
 export interface AuthUser {
   id: string;
   phone: string;
+  displayName: string | null;
   tenantId: string;
   allowedRoles: AuthRole[];
   activeRole: AuthRole;
@@ -132,4 +133,20 @@ export interface SellerApplyResponse {
 
 export interface SellerApplicationResponse {
   application: SellerApplication;
+}
+
+export interface MeResponse {
+  user: AuthUser;
+}
+
+export interface UpdateMeRequest {
+  displayName?: string | null;
+}
+
+export interface RoleSwitchRequest {
+  role: AuthRole;
+}
+
+export interface RoleSwitchResponse {
+  user: AuthUser;
 }
