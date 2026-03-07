@@ -1,10 +1,5 @@
-import { PlaceholderScreen } from "../../src/screens/PlaceholderScreen";
+import { ActivityScreen } from "../../src/screens/ActivityScreen";
 
 export default function ActivityRoute() {
-  return (
-    <PlaceholderScreen
-      title="Activity"
-      description="Offer and market notifications will appear here once notification APIs are implemented."
-    />
-  );
+  return <ActivityScreen />;
 }
