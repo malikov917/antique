@@ -16,11 +16,13 @@ import type {
   ListingMutationDomainService,
   MarketSessionDomainService
 } from "../domain/marketplace/contracts.js";
+import type { NotificationService } from "../services/notificationService.js";
 
 interface MarketplaceRouteDeps {
   authService: AuthService;
   marketSessionService: MarketSessionDomainService;
   listingMutationService: ListingMutationDomainService;
+  notificationService?: NotificationService;
 }
 
 function sendAuthError(reply: FastifyReply, error: AuthError): ReturnType<FastifyReply["send"]> {
@@ -57,10 +59,17 @@ export async function registerMarketplaceRoutes(
       );
       requireSellerRole(auth.user);
 
-      return {
-        session: deps.marketSessionService.openMarketSession(auth.user.id)
-      };
-    } catch (error) {
+        const session = deps.marketSessionService.openMarketSession(auth.user.id);
+        deps.notificationService?.onSessionStateChanged({
+          sessionId: session.id,
+          sellerUserId: auth.user.id,
+          state: "opened",
+          requestIp: request.ip
+        });
+        return {
+          session
+        };
+      } catch (error) {
       if (error instanceof AuthError) {
         return sendAuthError(reply, error);
       }
@@ -77,10 +86,17 @@ export async function registerMarketplaceRoutes(
         );
         requireSellerRole(auth.user);
 
-        return deps.marketSessionService.closeMarketSession({
+        const result = deps.marketSessionService.closeMarketSession({
           sellerUserId: auth.user.id,
           sessionId: request.params.id
         });
+        deps.notificationService?.onSessionStateChanged({
+          sessionId: result.session.id,
+          sellerUserId: auth.user.id,
+          state: "closed",
+          requestIp: request.ip
+        });
+        return result;
       } catch (error) {
         if (error instanceof AuthError) {
           return sendAuthError(reply, error);
@@ -131,14 +147,21 @@ export async function registerMarketplaceRoutes(
           throw new AuthError("invalid_request", "shippingAddress is required", 400);
         }
 
+        const offer = deps.listingMutationService.createOffer({
+          buyerUserId: auth.user.id,
+          listingId: request.params.id,
+          amountCents: body.amountCents as number,
+          shippingAddress: body.shippingAddress.trim(),
+          requestIp: request.ip
+        });
+        deps.notificationService?.onOfferSubmitted({
+          offerId: offer.id,
+          listingId: request.params.id,
+          buyerUserId: auth.user.id,
+          requestIp: request.ip
+        });
         return {
-          offer: deps.listingMutationService.createOffer({
-            buyerUserId: auth.user.id,
-            listingId: request.params.id,
-            amountCents: body.amountCents as number,
-            shippingAddress: body.shippingAddress.trim(),
-            requestIp: request.ip
-          })
+          offer
         };
       } catch (error) {
         if (error instanceof AuthError) {
@@ -182,11 +205,18 @@ export async function registerMarketplaceRoutes(
         );
         requireSellerRole(auth.user);
 
-        return deps.listingMutationService.acceptOffer({
+        const result = deps.listingMutationService.acceptOffer({
           sellerUserId: auth.user.id,
           offerId: request.params.id,
           requestIp: request.ip
         });
+        deps.notificationService?.onOfferDecision({
+          offerId: request.params.id,
+          sellerUserId: auth.user.id,
+          decision: "accepted",
+          requestIp: request.ip
+        });
+        return result;
       } catch (error) {
         if (error instanceof AuthError) {
           return sendAuthError(reply, error);
@@ -205,12 +235,19 @@ export async function registerMarketplaceRoutes(
         );
         requireSellerRole(auth.user);
 
+        const offer = deps.listingMutationService.declineOffer({
+          sellerUserId: auth.user.id,
+          offerId: request.params.id,
+          requestIp: request.ip
+        });
+        deps.notificationService?.onOfferDecision({
+          offerId: request.params.id,
+          sellerUserId: auth.user.id,
+          decision: "declined",
+          requestIp: request.ip
+        });
         return {
-          offer: deps.listingMutationService.declineOffer({
-            sellerUserId: auth.user.id,
-            offerId: request.params.id,
-            requestIp: request.ip
-          })
+          offer
         };
       } catch (error) {
         if (error instanceof AuthError) {

@@ -278,6 +278,70 @@ export function initializeDatabase(sqlite: Database): void {
     CREATE INDEX IF NOT EXISTS idx_deals_seller_created_at
       ON deals(seller_user_id, created_at DESC);
 
+    CREATE TABLE IF NOT EXISTS announcements (
+      id TEXT PRIMARY KEY,
+      tenant_id TEXT NOT NULL,
+      seller_user_id TEXT NOT NULL,
+      title TEXT NOT NULL,
+      body TEXT NOT NULL,
+      created_at INTEGER NOT NULL,
+      FOREIGN KEY (seller_user_id) REFERENCES users(id)
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_announcements_tenant_created_at
+      ON announcements(tenant_id, created_at DESC);
+
+    CREATE TABLE IF NOT EXISTS notifications (
+      id TEXT PRIMARY KEY,
+      user_id TEXT NOT NULL,
+      tenant_id TEXT NOT NULL,
+      type TEXT NOT NULL,
+      title TEXT NOT NULL,
+      message TEXT NOT NULL,
+      metadata_json TEXT NOT NULL,
+      created_at INTEGER NOT NULL,
+      read_at INTEGER,
+      FOREIGN KEY (user_id) REFERENCES users(id)
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_notifications_user_created
+      ON notifications(user_id, created_at DESC);
+    CREATE INDEX IF NOT EXISTS idx_notifications_tenant_created
+      ON notifications(tenant_id, created_at DESC);
+
+    CREATE TABLE IF NOT EXISTS user_push_tokens (
+      id TEXT PRIMARY KEY,
+      user_id TEXT NOT NULL,
+      tenant_id TEXT NOT NULL,
+      expo_push_token TEXT NOT NULL,
+      platform TEXT NOT NULL,
+      created_at INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL,
+      UNIQUE(user_id, expo_push_token),
+      FOREIGN KEY (user_id) REFERENCES users(id)
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_user_push_tokens_user_updated
+      ON user_push_tokens(user_id, updated_at DESC);
+
+    CREATE TABLE IF NOT EXISTS notification_push_attempts (
+      id TEXT PRIMARY KEY,
+      notification_id TEXT NOT NULL,
+      user_id TEXT NOT NULL,
+      push_token_id TEXT NOT NULL,
+      attempt INTEGER NOT NULL,
+      status TEXT NOT NULL,
+      error TEXT,
+      next_retry_at INTEGER,
+      created_at INTEGER NOT NULL,
+      FOREIGN KEY (notification_id) REFERENCES notifications(id),
+      FOREIGN KEY (user_id) REFERENCES users(id),
+      FOREIGN KEY (push_token_id) REFERENCES user_push_tokens(id)
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_notification_push_attempts_notification_created
+      ON notification_push_attempts(notification_id, created_at DESC);
+
     CREATE TABLE IF NOT EXISTS seller_sales (
       id TEXT PRIMARY KEY,
       seller_user_id TEXT NOT NULL,

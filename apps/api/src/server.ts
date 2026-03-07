@@ -11,6 +11,7 @@ import { registerSellerRoutes } from "./routes/seller.js";
 import { registerMeRoutes } from "./routes/me.js";
 import { registerMarketplaceRoutes } from "./routes/marketplace.js";
 import { registerTrustSafetyRoutes } from "./routes/trustSafety.js";
+import { registerNotificationRoutes } from "./routes/notifications.js";
 import { type ApiConfig } from "./config.js";
 import { createDatabaseClient, type DatabaseClient } from "./db/client.js";
 import { initializeDatabase } from "./db/init.js";
@@ -23,6 +24,7 @@ import { MarketplaceService } from "./services/marketplaceService.js";
 import { SellerSalesService } from "./services/sellerSalesService.js";
 import { RetentionPurgeService } from "./services/retentionPurgeService.js";
 import { TrustSafetyService } from "./services/trustSafetyService.js";
+import { NotificationService, type NotificationPushProvider } from "./services/notificationService.js";
 
 export interface BuildServerParams {
   config: ApiConfig;
@@ -30,6 +32,7 @@ export interface BuildServerParams {
   muxClient?: MuxClient;
   dbClient?: DatabaseClient;
   smsProvider?: SmsProvider;
+  notificationPushProvider?: NotificationPushProvider;
   now?: () => number;
 }
 
@@ -84,6 +87,10 @@ export async function buildServer(params: BuildServerParams): Promise<FastifyIns
   );
   const sellerSalesService = new SellerSalesService(dbClient.sqlite, params.now);
   const trustSafetyService = new TrustSafetyService(dbClient.sqlite, params.now);
+  const notificationService = new NotificationService(dbClient.sqlite, {
+    now: params.now,
+    pushProvider: params.notificationPushProvider
+  });
   const retentionPurgeService = new RetentionPurgeService(dbClient.sqlite, params.now);
   let retentionTimer: ReturnType<typeof setInterval> | undefined;
 
@@ -148,10 +155,15 @@ export async function buildServer(params: BuildServerParams): Promise<FastifyIns
     authService,
     trustSafetyService
   });
+  await registerNotificationRoutes(app, {
+    authService,
+    notificationService
+  });
   await registerMarketplaceRoutes(app, {
     authService,
     marketSessionService: marketplaceService,
-    listingMutationService: marketplaceService
+    listingMutationService: marketplaceService,
+    notificationService
   });
   await registerWebhookRoutes(app, {
     muxWebhookSecret: params.config.muxWebhookSecret,

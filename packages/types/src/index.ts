@@ -273,3 +273,47 @@ export interface AcceptOfferResponse {
 export interface DeclineOfferResponse {
   offer: Offer;
 }
+
+export interface NotificationItem {
+  id: string;
+  type: "offer_submitted" | "offer_accepted" | "offer_declined" | "session_opened" | "session_closed" | "announcement";
+  title: string;
+  message: string;
+  metadata: Record<string, unknown>;
+  createdAt: string;
+  readAt: string | null;
+}
+
+export interface NotificationsResponse {
+  notifications: NotificationItem[];
+}
+
+export interface RegisterPushTokenRequest {
+  token: string;
+  platform: AuthPlatform;
+}
+
+export interface RegisterPushTokenResponse {
+  success: true;
+}
+
+export interface AnnouncementItem {
+  id: string;
+  sellerUserId: string;
+  title: string;
+  body: string;
+  createdAt: string;
+}
+
+export interface ListAnnouncementsResponse {
+  announcements: AnnouncementItem[];
+}
+
+export interface CreateAnnouncementRequest {
+  title: string;
+  body: string;
+}
+
+export interface CreateAnnouncementResponse {
+  announcement: AnnouncementItem;
+}
