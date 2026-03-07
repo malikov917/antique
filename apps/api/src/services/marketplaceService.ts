@@ -4,12 +4,14 @@ import type {
   Chat,
   ChatMessage,
   Deal,
+  DealStatus,
   Listing,
   ListingStatus,
   MarketSession,
   MarketSessionStatus,
   Offer
 } from "@antique/types";
+import { MIN_OFFER_RULE, isDealStatusTransitionAllowed } from "@antique/types";
 import { AuthError } from "../auth/errors.js";
 import { requireTenantScope } from "../auth/guards.js";
 import { newId } from "../auth/crypto.js";
@@ -18,7 +20,6 @@ import type {
   MarketSessionDomainService
 } from "../domain/marketplace/contracts.js";
 
-type DealStatus = "open" | "paid" | "completed" | "canceled";
 interface MarketSessionRow {
   id: string;
   seller_user_id: string;
@@ -858,7 +859,7 @@ export class MarketplaceService
 
     if (
       params.offeredAmountCents !== undefined &&
-      params.offeredAmountCents < row.listed_price_cents
+      !MIN_OFFER_RULE(params.offeredAmountCents, row.listed_price_cents)
     ) {
       throw new AuthError(
         "offer_below_listed_price",
@@ -1116,13 +1117,7 @@ export class MarketplaceService
     if (current === next) {
       return;
     }
-    const allowed: Record<DealStatus, DealStatus[]> = {
-      open: ["paid", "canceled"],
-      paid: ["completed", "canceled"],
-      completed: [],
-      canceled: []
-    };
-    if (!allowed[current].includes(next)) {
+    if (!isDealStatusTransitionAllowed(current, next)) {
       throw new AuthError("deal_invalid_status_transition", "Deal status transition is not allowed", 409);
     }
   }

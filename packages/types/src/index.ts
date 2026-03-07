@@ -289,13 +289,28 @@ export interface CreateOfferResponse {
   offer: Offer;
 }
 
+export const MIN_OFFER_RULE = (offerAmountCents: number, listedPriceCents: number): boolean =>
+  offerAmountCents >= listedPriceCents;
+
+export type DealStatus = "open" | "paid" | "completed" | "canceled";
+
+export const DEAL_STATUS_TRANSITIONS: Record<DealStatus, readonly DealStatus[]> = {
+  open: ["paid", "canceled"],
+  paid: ["completed", "canceled"],
+  completed: [],
+  canceled: []
+};
+
+export const isDealStatusTransitionAllowed = (current: DealStatus, next: DealStatus): boolean =>
+  current === next || DEAL_STATUS_TRANSITIONS[current].includes(next);
+
 export interface Deal {
   id: string;
   listingId: string;
   acceptedOfferId: string;
   sellerUserId: string;
   buyerUserId: string;
-  status: "open" | "paid" | "completed" | "canceled";
+  status: DealStatus;
   createdAt: string;
   updatedAt: string;
 }
@@ -319,7 +334,7 @@ export interface DealsMeResponse {
 }
 
 export interface UpdateDealStatusRequest {
-  status: "paid" | "completed" | "canceled";
+  status: Exclude<DealStatus, "open">;
 }
 
 export interface UpdateDealStatusResponse {
