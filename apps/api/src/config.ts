@@ -21,6 +21,8 @@ export interface ApiConfig {
   authOtpRequestPerPhonePerHour: number;
   authOtpRequestPerIpPerHour: number;
   authOtpVerifyPerPhoneIpPerHour: number;
+  offerSubmitPerUserPerHour: number;
+  offerDecisionPerSellerPerHour: number;
   retentionPurgeEnabled: boolean;
   retentionPurgeIntervalSec: number;
 }
@@ -161,6 +163,11 @@ export function loadConfig(): ApiConfig {
     authOtpVerifyPerPhoneIpPerHour: parseNumberValue(
       process.env.AUTH_OTP_VERIFY_PER_PHONE_IP_PER_HOUR,
       10
+    ),
+    offerSubmitPerUserPerHour: parseNumberValue(process.env.OFFER_SUBMIT_PER_USER_PER_HOUR, 30),
+    offerDecisionPerSellerPerHour: parseNumberValue(
+      process.env.OFFER_DECISION_PER_SELLER_PER_HOUR,
+      120
     ),
     retentionPurgeEnabled: parseBooleanValue(process.env.RETENTION_PURGE_ENABLED, true),
     retentionPurgeIntervalSec: parseNumberValue(process.env.RETENTION_PURGE_INTERVAL_SEC, 60 * 60)

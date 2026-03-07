@@ -29,6 +29,7 @@ interface MarketSessionRow {
 
 interface ListingAvailabilityRow {
   id: string;
+  seller_user_id: string;
   tenant_id: string | null;
   status: ListingStatus;
   session_status: MarketSessionStatus;
@@ -59,6 +60,16 @@ interface DealRow {
   created_at: number;
   updated_at: number;
 }
+
+export interface MarketplaceRuntimeConfig {
+  offerSubmitPerUserPerHour: number;
+  offerDecisionPerSellerPerHour: number;
+}
+
+const DEFAULT_RUNTIME_CONFIG: MarketplaceRuntimeConfig = {
+  offerSubmitPerUserPerHour: 30,
+  offerDecisionPerSellerPerHour: 120
+};
 
 function toIso(timestamp: number): string {
   return new Date(timestamp).toISOString();
@@ -105,10 +116,16 @@ export class MarketplaceService
 {
   constructor(
     private readonly sqlite: Database,
+    runtimeConfig: MarketplaceRuntimeConfig = DEFAULT_RUNTIME_CONFIG,
     private readonly now: () => number = () => Date.now()
-  ) {}
+  ) {
+    this.runtimeConfig = runtimeConfig;
+  }
+
+  private readonly runtimeConfig: MarketplaceRuntimeConfig;
 
   openMarketSession(sellerUserId: string): MarketSession {
+    this.assertSellerNotSuspended(sellerUserId);
     const existing = this.sqlite
       .prepare(
         `
@@ -157,6 +174,7 @@ export class MarketplaceService
     sellerUserId: string;
     sessionId: string;
   }): { session: MarketSession; transitionedListingCount: number } {
+    this.assertSellerNotSuspended(params.sellerUserId);
     const sellerTenantId = this.resolveUserTenantId(params.sellerUserId);
     const session = this.sqlite
       .prepare("SELECT * FROM market_sessions WHERE id = ? LIMIT 1")
@@ -246,8 +264,14 @@ export class MarketplaceService
     listingId: string;
     amountCents: number;
     shippingAddress: string;
+    requestIp?: string;
   }): Offer {
     const tenantId = this.assertListingAllowsBuyerMutation(params.listingId, params.buyerUserId);
+    this.assertOfferRateLimit(
+      params.buyerUserId,
+      "submit",
+      this.runtimeConfig.offerSubmitPerUserPerHour
+    );
     const id = newId();
     const timestamp = this.now();
     this.sqlite
@@ -276,6 +300,14 @@ export class MarketplaceService
         timestamp
       );
 
+    this.recordOfferAction({
+      actorUserId: params.buyerUserId,
+      actorRole: "buyer",
+      reasonCode: "submit",
+      requestIp: params.requestIp ?? null,
+      metadata: { listingId: params.listingId, offerId: id }
+    });
+
     return {
       id,
       listingId: params.listingId,
@@ -288,6 +320,7 @@ export class MarketplaceService
   }
 
   listSellerListingOffers(params: { sellerUserId: string; listingId: string }): Offer[] {
+    this.assertSellerNotSuspended(params.sellerUserId);
     this.assertListingOwnedBySeller(params.listingId, params.sellerUserId);
     const sellerTenantId = this.resolveUserTenantId(params.sellerUserId);
     const rows = this.sqlite
@@ -308,7 +341,14 @@ export class MarketplaceService
   acceptOffer(params: {
     sellerUserId: string;
     offerId: string;
+    requestIp?: string;
   }): { offer: Offer; deal: Deal; autoDeclinedCount: number } {
+    this.assertSellerNotSuspended(params.sellerUserId);
+    this.assertOfferRateLimit(
+      params.sellerUserId,
+      "decision",
+      this.runtimeConfig.offerDecisionPerSellerPerHour
+    );
     const nowTs = this.now();
     const tx = this.sqlite.transaction(
       (
@@ -391,11 +431,24 @@ export class MarketplaceService
         };
       }
     );
-
-    return tx(params.sellerUserId, params.offerId, nowTs);
+    const result = tx(params.sellerUserId, params.offerId, nowTs);
+    this.recordOfferAction({
+      actorUserId: params.sellerUserId,
+      actorRole: "seller",
+      reasonCode: "decision",
+      requestIp: params.requestIp ?? null,
+      metadata: { offerId: params.offerId, action: "accept" }
+    });
+    return result;
   }
 
-  declineOffer(params: { sellerUserId: string; offerId: string }): Offer {
+  declineOffer(params: { sellerUserId: string; offerId: string; requestIp?: string }): Offer {
+    this.assertSellerNotSuspended(params.sellerUserId);
+    this.assertOfferRateLimit(
+      params.sellerUserId,
+      "decision",
+      this.runtimeConfig.offerDecisionPerSellerPerHour
+    );
     const tx = this.sqlite.transaction((sellerUserId: string, offerId: string): Offer => {
       const context = this.getOfferContext(offerId);
       if (!context) {
@@ -428,8 +481,15 @@ export class MarketplaceService
         .get(offerId) as OfferRow;
       return toOffer(offerRow);
     });
-
-    return tx(params.sellerUserId, params.offerId);
+    const offer = tx(params.sellerUserId, params.offerId);
+    this.recordOfferAction({
+      actorUserId: params.sellerUserId,
+      actorRole: "seller",
+      reasonCode: "decision",
+      requestIp: params.requestIp ?? null,
+      metadata: { offerId: params.offerId, action: "decline" }
+    });
+    return offer;
   }
 
   private assertListingAllowsBuyerMutation(listingId: string, buyerUserId: string): string {
@@ -438,6 +498,7 @@ export class MarketplaceService
         `
           SELECT
             listings.id,
+            listings.seller_user_id,
             listings.tenant_id,
             listings.status,
             market_sessions.status AS session_status
@@ -459,6 +520,7 @@ export class MarketplaceService
       throw new AuthError("listing_unavailable", "Listing is no longer available", 409);
     }
 
+    this.assertUsersCanInteract(buyerUserId, row.seller_user_id);
     const buyerTenantId = this.resolveUserTenantId(buyerUserId);
     if (!row.tenant_id) {
       throw new AuthError("forbidden_tenant_scope", "Listing tenant could not be resolved", 403);
@@ -611,6 +673,105 @@ export class MarketplaceService
         "Listing is not in a state that allows offer decisions",
         409
       );
+    }
+    this.assertUsersCanInteract(context.buyer_user_id, context.seller_user_id);
+  }
+
+  private assertOfferRateLimit(actorUserId: string, reasonCode: "submit" | "decision", max: number): void {
+    const hourAgo = this.now() - 60 * 60 * 1000;
+    const row = this.sqlite
+      .prepare(
+        `
+          SELECT COUNT(1) AS count
+          FROM audit_events
+          WHERE event_type = 'offer_action'
+            AND actor_user_id = ?
+            AND reason_code = ?
+            AND created_at >= ?
+        `
+      )
+      .get(actorUserId, reasonCode, hourAgo) as { count: number } | undefined;
+
+    if ((row?.count ?? 0) >= max) {
+      throw new AuthError(
+        "offer_action_rate_limited",
+        "Offer action rate limit exceeded",
+        429,
+        60
+      );
+    }
+  }
+
+  private recordOfferAction(params: {
+    actorUserId: string;
+    actorRole: "buyer" | "seller";
+    reasonCode: "submit" | "decision";
+    requestIp: string | null;
+    metadata: Record<string, unknown>;
+  }): void {
+    this.sqlite
+      .prepare(
+        `
+          INSERT INTO audit_events (
+            id,
+            event_type,
+            actor_user_id,
+            actor_role,
+            target_seller_user_id,
+            outcome,
+            reason_code,
+            request_ip,
+            metadata_json,
+            created_at
+          ) VALUES (?, 'offer_action', ?, ?, NULL, 'allowed', ?, ?, ?, ?)
+        `
+      )
+      .run(
+        newId(),
+        params.actorUserId,
+        params.actorRole,
+        params.reasonCode,
+        params.requestIp,
+        JSON.stringify(params.metadata),
+        this.now()
+      );
+  }
+
+  private assertUsersCanInteract(userAId: string, userBId: string): void {
+    const row = this.sqlite
+      .prepare(
+        `
+          SELECT id
+          FROM user_blocks
+          WHERE (blocker_user_id = ? AND blocked_user_id = ?)
+             OR (blocker_user_id = ? AND blocked_user_id = ?)
+          LIMIT 1
+        `
+      )
+      .get(userAId, userBId, userBId, userAId) as { id: string } | undefined;
+
+    if (row) {
+      throw new AuthError("interaction_blocked", "Interaction is blocked between these users", 403);
+    }
+  }
+
+  private assertSellerNotSuspended(sellerUserId: string): void {
+    const row = this.sqlite
+      .prepare(
+        `
+          SELECT suspended_at
+          FROM users
+          WHERE id = ?
+          LIMIT 1
+        `
+      )
+      .get(sellerUserId) as { suspended_at: number | null } | undefined;
+
+    if (!row) {
+      throw new AuthError("not_found", "User was not found", 404);
+    }
+    if (typeof row.suspended_at === "number") {
+      throw new AuthError("seller_suspended", "Suspended sellers cannot perform seller actions", 403);
     }
   }
 

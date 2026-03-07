@@ -20,6 +20,7 @@ export interface CreateOfferInput {
   listingId: string;
   amountCents: number;
   shippingAddress: string;
+  requestIp?: string;
 }
 
 export interface MarketSessionDomainService {
@@ -31,12 +32,12 @@ export interface ListingMutationDomainService {
   createBasketItem(params: CreateBasketItemInput): BasketItem;
   createOffer(params: CreateOfferInput): Offer;
   listSellerListingOffers(params: { sellerUserId: string; listingId: string }): Offer[];
-  acceptOffer(params: { sellerUserId: string; offerId: string }): {
+  acceptOffer(params: { sellerUserId: string; offerId: string; requestIp?: string }): {
     offer: Offer;
     deal: Deal;
     autoDeclinedCount: number;
   };
-  declineOffer(params: { sellerUserId: string; offerId: string }): Offer;
+  declineOffer(params: { sellerUserId: string; offerId: string; requestIp?: string }): Offer;
 }
 
 // Forward contracts for upcoming P2-P4 extraction work.

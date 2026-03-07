@@ -56,6 +56,8 @@ function buildTestConfig(overrides?: Partial<ApiConfig>): ApiConfig {
     authOtpRequestPerPhonePerHour: 5,
     authOtpRequestPerIpPerHour: 30,
     authOtpVerifyPerPhoneIpPerHour: 10,
+    offerSubmitPerUserPerHour: 30,
+    offerDecisionPerSellerPerHour: 120,
     retentionPurgeEnabled: false,
     retentionPurgeIntervalSec: 60 * 60,
   };
@@ -1949,6 +1951,294 @@ describe("auth api", () => {
     expect(auditRow).toMatchObject({
       reason_code: "forbidden_seller_suspended",
       outcome: "denied"
+    });
+
+    await app.close();
+  });
+
+  it("rate limits offer submissions with explicit auth error code", async () => {
+    const smsProvider = new TestSmsProvider();
+    const dbClient = createDatabaseClient(":memory:");
+    const app = await buildServer({
+      config: buildTestConfig({
+        offerSubmitPerUserPerHour: 1
+      }),
+      smsProvider,
+      muxClient: buildMockMuxClient(),
+      dbClient
+    });
+
+    const seller = await createAuthenticatedSeller(app, smsProvider, dbClient, "+14155550101");
+    const buyer = await createAuthenticatedBuyer(app, smsProvider, "+14155550102");
+
+    const openSession = await app.inject({
+      method: "POST",
+      url: "/v1/seller/sessions/open",
+      headers: {
+        authorization: `Bearer ${seller.accessToken}`
+      }
+    });
+    expect(openSession.statusCode).toBe(200);
+    const sessionId = openSession.json().session.id as string;
+
+    dbClient.sqlite
+      .prepare(
+        `
+          INSERT INTO listings (id, seller_user_id, market_session_id, tenant_id, status, created_at, updated_at)
+          VALUES (?, ?, ?, ?, 'live', ?, ?)
+        `
+      )
+      .run("listing-rate-limit", seller.userId, sessionId, "default", Date.now(), Date.now());
+
+    const first = await app.inject({
+      method: "POST",
+      url: "/v1/listings/listing-rate-limit/offers",
+      headers: {
+        authorization: `Bearer ${buyer}`
+      },
+      payload: {
+        amountCents: 1000,
+        shippingAddress: "101 Test St"
+      }
+    });
+    expect(first.statusCode).toBe(200);
+
+    const second = await app.inject({
+      method: "POST",
+      url: "/v1/listings/listing-rate-limit/offers",
+      headers: {
+        authorization: `Bearer ${buyer}`
+      },
+      payload: {
+        amountCents: 1200,
+        shippingAddress: "102 Test St"
+      }
+    });
+    expect(second.statusCode).toBe(429);
+    expect(second.json()).toMatchObject({
+      code: "offer_action_rate_limited"
+    });
+
+    await app.close();
+  });
+
+  it("supports user report/block and enforces blocked interactions in offer flow", async () => {
+    const smsProvider = new TestSmsProvider();
+    const dbClient = createDatabaseClient(":memory:");
+    const app = await buildServer({
+      config: buildTestConfig(),
+      smsProvider,
+      muxClient: buildMockMuxClient(),
+      dbClient
+    });
+
+    const seller = await createAuthenticatedSeller(app, smsProvider, dbClient, "+14155550111");
+    const buyer = await createAuthenticatedSession(
+      app,
+      smsProvider,
+      "+14155550112",
+      "ios-device-report-block-buyer"
+    );
+
+    const openSession = await app.inject({
+      method: "POST",
+      url: "/v1/seller/sessions/open",
+      headers: {
+        authorization: `Bearer ${seller.accessToken}`
+      }
+    });
+    expect(openSession.statusCode).toBe(200);
+    const sessionId = openSession.json().session.id as string;
+
+    dbClient.sqlite
+      .prepare(
+        `
+          INSERT INTO listings (id, seller_user_id, market_session_id, tenant_id, status, created_at, updated_at)
+          VALUES (?, ?, ?, ?, 'live', ?, ?)
+        `
+      )
+      .run("listing-blocked", seller.userId, sessionId, "default", Date.now(), Date.now());
+
+    const reportResponse = await app.inject({
+      method: "POST",
+      url: `/v1/users/${seller.userId}/report`,
+      headers: {
+        authorization: `Bearer ${buyer.accessToken}`
+      },
+      payload: {
+        reason: "abusive_behavior",
+        details: "Repeated spam messages"
+      }
+    });
+    expect(reportResponse.statusCode).toBe(200);
+    expect(reportResponse.json()).toMatchObject({
+      reportId: expect.any(String)
+    });
+
+    const blockResponse = await app.inject({
+      method: "POST",
+      url: `/v1/users/${seller.userId}/block`,
+      headers: {
+        authorization: `Bearer ${buyer.accessToken}`
+      }
+    });
+    expect(blockResponse.statusCode).toBe(200);
+    expect(blockResponse.json()).toMatchObject({
+      success: true
+    });
+
+    const offerResponse = await app.inject({
+      method: "POST",
+      url: "/v1/listings/listing-blocked/offers",
+      headers: {
+        authorization: `Bearer ${buyer.accessToken}`
+      },
+      payload: {
+        amountCents: 1500,
+        shippingAddress: "202 Test St"
+      }
+    });
+    expect(offerResponse.statusCode).toBe(403);
+    expect(offerResponse.json()).toMatchObject({
+      code: "interaction_blocked"
+    });
+
+    await app.close();
+  });
+
+  it("allows admin suspension and blocks suspended seller marketplace actions", async () => {
+    const smsProvider = new TestSmsProvider();
+    const dbClient = createDatabaseClient(":memory:");
+    const app = await buildServer({
+      config: buildTestConfig(),
+      smsProvider,
+      muxClient: buildMockMuxClient(),
+      dbClient
+    });
+
+    const seller = await createAuthenticatedSession(
+      app,
+      smsProvider,
+      "+14155550121",
+      "ios-device-suspension-seller"
+    );
+    const admin = await createAuthenticatedSession(
+      app,
+      smsProvider,
+      "+14155550122",
+      "ios-device-suspension-admin"
+    );
+
+    dbClient.sqlite
+      .prepare("UPDATE users SET allowed_roles = ?, active_role = ? WHERE id = ?")
+      .run(JSON.stringify(["buyer", "seller"]), "seller", seller.userId);
+    dbClient.sqlite
+      .prepare("UPDATE users SET allowed_roles = ?, active_role = ? WHERE id = ?")
+      .run(JSON.stringify(["buyer", "admin"]), "admin", admin.userId);
+
+    const suspendResponse = await app.inject({
+      method: "POST",
+      url: `/v1/admin/sellers/${seller.userId}/suspend`,
+      headers: {
+        authorization: `Bearer ${admin.accessToken}`
+      },
+      payload: {
+        reason: "fraud_suspected"
+      }
+    });
+    expect(suspendResponse.statusCode).toBe(200);
+    expect(suspendResponse.json()).toMatchObject({
+      userId: seller.userId,
+      suspendedAt: expect.any(String)
+    });
+
+    const openSessionResponse = await app.inject({
+      method: "POST",
+      url: "/v1/seller/sessions/open",
+      headers: {
+        authorization: `Bearer ${seller.accessToken}`
+      }
+    });
+    expect(openSessionResponse.statusCode).toBe(403);
+    expect(openSessionResponse.json()).toMatchObject({
+      code: "seller_suspended"
+    });
+
+    await app.close();
+  });
+
+  it("allows admin listing moderation flags for quality workflows", async () => {
+    const smsProvider = new TestSmsProvider();
+    const dbClient = createDatabaseClient(":memory:");
+    const app = await buildServer({
+      config: buildTestConfig(),
+      smsProvider,
+      muxClient: buildMockMuxClient(),
+      dbClient
+    });
+
+    const seller = await createAuthenticatedSeller(app, smsProvider, dbClient, "+14155550131");
+    const admin = await createAuthenticatedSession(
+      app,
+      smsProvider,
+      "+14155550132",
+      "ios-device-flag-admin"
+    );
+    dbClient.sqlite
+      .prepare("UPDATE users SET allowed_roles = ?, active_role = ? WHERE id = ?")
+      .run(JSON.stringify(["buyer", "admin"]), "admin", admin.userId);
+
+    const openSession = await app.inject({
+      method: "POST",
+      url: "/v1/seller/sessions/open",
+      headers: {
+        authorization: `Bearer ${seller.accessToken}`
+      }
+    });
+    expect(openSession.statusCode).toBe(200);
+    const sessionId = openSession.json().session.id as string;
+    dbClient.sqlite
+      .prepare(
+        `
+          INSERT INTO listings (id, seller_user_id, market_session_id, tenant_id, status, created_at, updated_at)
+          VALUES (?, ?, ?, ?, 'live', ?, ?)
+        `
+      )
+      .run("listing-flag", seller.userId, sessionId, "default", Date.now(), Date.now());
+
+    const flagResponse = await app.inject({
+      method: "POST",
+      url: "/v1/admin/listings/listing-flag/moderation-flags",
+      headers: {
+        authorization: `Bearer ${admin.accessToken}`
+      },
+      payload: {
+        reasonCode: "video_blurry",
+        note: "Video quality is not acceptable for listing approval"
+      }
+    });
+    expect(flagResponse.statusCode).toBe(200);
+    expect(flagResponse.json()).toMatchObject({
+      listingId: "listing-flag",
+      reasonCode: "video_blurry",
+      status: "open"
+    });
+
+    const persisted = dbClient.sqlite
+      .prepare(
+        `
+          SELECT reason_code, status
+          FROM listing_moderation_flags
+          WHERE listing_id = ?
+          ORDER BY created_at DESC
+          LIMIT 1
+        `
+      )
+      .get("listing-flag") as { reason_code: string; status: string } | undefined;
+
+    expect(persisted).toMatchObject({
+      reason_code: "video_blurry",
+      status: "open"
     });
 
     await app.close();

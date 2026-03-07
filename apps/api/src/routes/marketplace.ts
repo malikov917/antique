@@ -136,7 +136,8 @@ export async function registerMarketplaceRoutes(
             buyerUserId: auth.user.id,
             listingId: request.params.id,
             amountCents: body.amountCents as number,
-            shippingAddress: body.shippingAddress.trim()
+            shippingAddress: body.shippingAddress.trim(),
+            requestIp: request.ip
           })
         };
       } catch (error) {
@@ -183,7 +184,8 @@ export async function registerMarketplaceRoutes(
 
         return deps.listingMutationService.acceptOffer({
           sellerUserId: auth.user.id,
-          offerId: request.params.id
+          offerId: request.params.id,
+          requestIp: request.ip
         });
       } catch (error) {
         if (error instanceof AuthError) {
@@ -206,7 +208,8 @@ export async function registerMarketplaceRoutes(
         return {
           offer: deps.listingMutationService.declineOffer({
             sellerUserId: auth.user.id,
-            offerId: request.params.id
+            offerId: request.params.id,
+            requestIp: request.ip
           })
         };
       } catch (error) {

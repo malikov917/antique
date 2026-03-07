@@ -301,6 +301,55 @@ export function initializeDatabase(sqlite: Database): void {
       ON seller_sales(tenant_id, seller_user_id, sold_at DESC);
     CREATE INDEX IF NOT EXISTS idx_seller_sales_pii_purged_at ON seller_sales(pii_purged_at);
 
+    CREATE TABLE IF NOT EXISTS user_blocks (
+      id TEXT PRIMARY KEY,
+      blocker_user_id TEXT NOT NULL,
+      blocked_user_id TEXT NOT NULL,
+      tenant_id TEXT NOT NULL,
+      created_at INTEGER NOT NULL,
+      UNIQUE(blocker_user_id, blocked_user_id),
+      FOREIGN KEY (blocker_user_id) REFERENCES users(id),
+      FOREIGN KEY (blocked_user_id) REFERENCES users(id)
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_user_blocks_blocker_created
+      ON user_blocks(blocker_user_id, created_at DESC);
+    CREATE INDEX IF NOT EXISTS idx_user_blocks_blocked_created
+      ON user_blocks(blocked_user_id, created_at DESC);
+
+    CREATE TABLE IF NOT EXISTS user_reports (
+      id TEXT PRIMARY KEY,
+      reporter_user_id TEXT NOT NULL,
+      reported_user_id TEXT NOT NULL,
+      tenant_id TEXT NOT NULL,
+      reason TEXT NOT NULL,
+      details TEXT,
+      request_ip TEXT,
+      created_at INTEGER NOT NULL,
+      FOREIGN KEY (reporter_user_id) REFERENCES users(id),
+      FOREIGN KEY (reported_user_id) REFERENCES users(id)
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_user_reports_reported_created
+      ON user_reports(reported_user_id, created_at DESC);
+
+    CREATE TABLE IF NOT EXISTS listing_moderation_flags (
+      id TEXT PRIMARY KEY,
+      listing_id TEXT NOT NULL,
+      actor_user_id TEXT NOT NULL,
+      tenant_id TEXT NOT NULL,
+      reason_code TEXT NOT NULL,
+      note TEXT,
+      status TEXT NOT NULL,
+      request_ip TEXT,
+      created_at INTEGER NOT NULL,
+      FOREIGN KEY (listing_id) REFERENCES listings(id),
+      FOREIGN KEY (actor_user_id) REFERENCES users(id)
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_listing_moderation_flags_listing_created
+      ON listing_moderation_flags(listing_id, created_at DESC);
+
     CREATE TABLE IF NOT EXISTS audit_events (
       id TEXT PRIMARY KEY,
       event_type TEXT NOT NULL,
