@@ -2243,4 +2243,184 @@ describe("auth api", () => {
 
     await app.close();
   });
+
+  it("creates seller announcements and exposes tenant-scoped notification timeline", async () => {
+    const smsProvider = new TestSmsProvider();
+    const dbClient = createDatabaseClient(":memory:");
+    const app = await buildServer({
+      config: buildTestConfig(),
+      smsProvider,
+      muxClient: buildMockMuxClient(),
+      dbClient
+    });
+
+    const seller = await createAuthenticatedSeller(app, smsProvider, dbClient, "+14155550141");
+    const buyer = await createAuthenticatedSession(
+      app,
+      smsProvider,
+      "+14155550142",
+      "ios-device-announcements-buyer"
+    );
+
+    const createAnnouncement = await app.inject({
+      method: "POST",
+      url: "/v1/announcements",
+      headers: {
+        authorization: `Bearer ${seller.accessToken}`
+      },
+      payload: {
+        title: "Today drop starts now",
+        body: "Fresh reels are now available for offers."
+      }
+    });
+    expect(createAnnouncement.statusCode).toBe(200);
+    expect(createAnnouncement.json()).toMatchObject({
+      announcement: {
+        title: "Today drop starts now"
+      }
+    });
+
+    const listAnnouncements = await app.inject({
+      method: "GET",
+      url: "/v1/announcements",
+      headers: {
+        authorization: `Bearer ${buyer.accessToken}`
+      }
+    });
+    expect(listAnnouncements.statusCode).toBe(200);
+    expect(listAnnouncements.json().announcements).toHaveLength(1);
+
+    const notifications = await app.inject({
+      method: "GET",
+      url: "/v1/notifications",
+      headers: {
+        authorization: `Bearer ${buyer.accessToken}`
+      }
+    });
+    expect(notifications.statusCode).toBe(200);
+    expect(notifications.json().notifications).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          type: "announcement",
+          title: "Today drop starts now"
+        })
+      ])
+    );
+
+    const funnelEvent = dbClient.sqlite
+      .prepare(
+        `
+          SELECT reason_code
+          FROM audit_events
+          WHERE event_type = 'funnel_event'
+            AND reason_code = 'announcement_posted'
+          LIMIT 1
+        `
+      )
+      .get() as { reason_code: string } | undefined;
+    expect(funnelEvent?.reason_code).toBe("announcement_posted");
+
+    await app.close();
+  });
+
+  it("records push attempts with retry/backoff for notification dispatch failures", async () => {
+    const smsProvider = new TestSmsProvider();
+    const dbClient = createDatabaseClient(":memory:");
+    const flakyPushProvider = {
+      send: vi
+        .fn()
+        .mockRejectedValueOnce(new Error("temporary push failure"))
+        .mockResolvedValue(undefined)
+    };
+    const app = await buildServer({
+      config: buildTestConfig(),
+      smsProvider,
+      muxClient: buildMockMuxClient(),
+      dbClient,
+      notificationPushProvider: flakyPushProvider
+    });
+
+    const seller = await createAuthenticatedSeller(app, smsProvider, dbClient, "+14155550151");
+    const buyer = await createAuthenticatedSession(
+      app,
+      smsProvider,
+      "+14155550152",
+      "ios-device-push-buyer"
+    );
+
+    const registerToken = await app.inject({
+      method: "POST",
+      url: "/v1/me/push-token",
+      headers: {
+        authorization: `Bearer ${buyer.accessToken}`
+      },
+      payload: {
+        token: "ExponentPushToken[test-token]",
+        platform: "ios"
+      }
+    });
+    expect(registerToken.statusCode).toBe(200);
+
+    const openSession = await app.inject({
+      method: "POST",
+      url: "/v1/seller/sessions/open",
+      headers: {
+        authorization: `Bearer ${seller.accessToken}`
+      }
+    });
+    expect(openSession.statusCode).toBe(200);
+    const sessionId = openSession.json().session.id as string;
+
+    dbClient.sqlite
+      .prepare(
+        `
+          INSERT INTO listings (id, seller_user_id, market_session_id, tenant_id, status, created_at, updated_at)
+          VALUES (?, ?, ?, ?, 'live', ?, ?)
+        `
+      )
+      .run("listing-push-test", seller.userId, sessionId, "default", Date.now(), Date.now());
+
+    const offer = await app.inject({
+      method: "POST",
+      url: "/v1/listings/listing-push-test/offers",
+      headers: {
+        authorization: `Bearer ${buyer.accessToken}`
+      },
+      payload: {
+        amountCents: 1400,
+        shippingAddress: "12 Push Lane"
+      }
+    });
+    expect(offer.statusCode).toBe(200);
+    const offerId = offer.json().offer.id as string;
+
+    const accept = await app.inject({
+      method: "POST",
+      url: `/v1/offers/${offerId}/accept`,
+      headers: {
+        authorization: `Bearer ${seller.accessToken}`
+      }
+    });
+    expect(accept.statusCode).toBe(200);
+
+    const attemptRows = dbClient.sqlite
+      .prepare(
+        `
+          SELECT status, attempt, next_retry_at
+          FROM notification_push_attempts
+          ORDER BY created_at ASC, attempt ASC
+        `
+      )
+      .all() as Array<{ status: string; attempt: number; next_retry_at: number | null }>;
+
+    expect(attemptRows.length).toBeGreaterThanOrEqual(2);
+    expect(attemptRows[0]).toMatchObject({
+      status: "failed",
+      attempt: 1
+    });
+    expect(attemptRows[0]?.next_retry_at).not.toBeNull();
+    expect(attemptRows.some((row) => row.status === "sent")).toBe(true);
+
+    await app.close();
+  });
 });
