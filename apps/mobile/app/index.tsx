@@ -1,6 +1,5 @@
-import { ReelsScreen } from "../src/screens/ReelsScreen";
+import { Redirect } from "expo-router";
 
 export default function IndexRoute() {
-  return <ReelsScreen />;
+  return <Redirect href="/(tabs)/feed" />;
 }
-
