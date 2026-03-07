@@ -1477,6 +1477,84 @@ describe("auth api", () => {
     await app.close();
   });
 
+  it("creates basket item and persists shipping snapshot on offer submit", async () => {
+    const smsProvider = new TestSmsProvider();
+    const dbClient = createDatabaseClient(":memory:");
+    const app = await buildServer({
+      config: buildTestConfig(),
+      smsProvider,
+      muxClient: buildMockMuxClient(),
+      dbClient
+    });
+
+    const seller = await createAuthenticatedSeller(app, smsProvider, dbClient, "+14155552670");
+    const buyer = await createAuthenticatedUser(app, smsProvider, "+14155552671");
+
+    const openResponse = await app.inject({
+      method: "POST",
+      url: "/v1/seller/sessions/open",
+      headers: {
+        authorization: `Bearer ${seller.accessToken}`
+      }
+    });
+    expect(openResponse.statusCode).toBe(200);
+
+    const listingResponse = await app.inject({
+      method: "POST",
+      url: "/v1/listings",
+      headers: {
+        authorization: `Bearer ${seller.accessToken}`
+      },
+      payload: {
+        title: "Reel Camera Lot",
+        listedPriceCents: 18000
+      }
+    });
+    expect(listingResponse.statusCode).toBe(200);
+    const listingId = listingResponse.json().listing.id as string;
+
+    const basketResponse = await app.inject({
+      method: "POST",
+      url: `/v1/listings/${listingId}/basket`,
+      headers: {
+        authorization: `Bearer ${buyer.accessToken}`
+      }
+    });
+    expect(basketResponse.statusCode).toBe(200);
+    expect(basketResponse.json()).toMatchObject({
+      basketItem: {
+        listingId,
+        buyerUserId: buyer.userId
+      }
+    });
+
+    const offerResponse = await app.inject({
+      method: "POST",
+      url: `/v1/listings/${listingId}/offers`,
+      headers: {
+        authorization: `Bearer ${buyer.accessToken}`
+      },
+      payload: {
+        amountCents: 19000,
+        shippingAddress: "  44 Vintage Road  "
+      }
+    });
+    expect(offerResponse.statusCode).toBe(200);
+    expect(offerResponse.json().offer).toMatchObject({
+      listingId,
+      buyerUserId: buyer.userId,
+      amountCents: 19000,
+      shippingAddress: "44 Vintage Road"
+    });
+
+    const offerRow = dbClient.sqlite
+      .prepare("SELECT shipping_address FROM offers WHERE id = ?")
+      .get(offerResponse.json().offer.id) as { shipping_address: string };
+    expect(offerRow.shipping_address).toBe("44 Vintage Road");
+
+    await app.close();
+  });
+
   it("allows sellers to create and update listings only during open market sessions", async () => {
     const smsProvider = new TestSmsProvider();
     const dbClient = createDatabaseClient(":memory:");
