@@ -295,6 +295,7 @@ export interface Deal {
   acceptedOfferId: string;
   sellerUserId: string;
   buyerUserId: string;
+  status: "open" | "paid" | "completed" | "canceled";
   createdAt: string;
   updatedAt: string;
 }
@@ -311,6 +312,52 @@ export interface AcceptOfferResponse {
 
 export interface DeclineOfferResponse {
   offer: Offer;
+}
+
+export interface DealsMeResponse {
+  deals: Deal[];
+}
+
+export interface UpdateDealStatusRequest {
+  status: "paid" | "completed" | "canceled";
+}
+
+export interface UpdateDealStatusResponse {
+  deal: Deal;
+}
+
+export interface Chat {
+  id: string;
+  dealId: string;
+  listingId: string;
+  sellerUserId: string;
+  buyerUserId: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface ChatMessage {
+  id: string;
+  chatId: string;
+  senderUserId: string;
+  text: string;
+  createdAt: string;
+}
+
+export interface ChatsResponse {
+  chats: Chat[];
+}
+
+export interface ChatMessagesResponse {
+  messages: ChatMessage[];
+}
+
+export interface SendChatMessageRequest {
+  text: string;
+}
+
+export interface SendChatMessageResponse {
+  message: ChatMessage;
 }
 
 export interface NotificationItem {

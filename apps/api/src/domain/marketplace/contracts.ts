@@ -1,4 +1,12 @@
-import type { BasketItem, Deal, Listing, MarketSession, Offer } from "@antique/types";
+import type {
+  BasketItem,
+  Chat,
+  ChatMessage,
+  Deal,
+  Listing,
+  MarketSession,
+  Offer
+} from "@antique/types";
 
 export interface CloseMarketSessionInput {
   sellerUserId: string;
@@ -51,6 +59,15 @@ export interface ListingMutationDomainService {
   createBasketItem(params: CreateBasketItemInput): BasketItem;
   createOffer(params: CreateOfferInput): Offer;
   listSellerListingOffers(params: { sellerUserId: string; listingId: string }): Offer[];
+  listDealsForUser(params: { userId: string }): Deal[];
+  updateDealStatus(params: {
+    userId: string;
+    dealId: string;
+    status: "paid" | "completed" | "canceled";
+  }): Deal;
+  listChatsForUser(params: { userId: string }): Chat[];
+  listChatMessages(params: { userId: string; chatId: string }): ChatMessage[];
+  createChatMessage(params: { userId: string; chatId: string; text: string }): ChatMessage;
   acceptOffer(params: { sellerUserId: string; offerId: string; requestIp?: string }): {
     offer: Offer;
     deal: Deal;

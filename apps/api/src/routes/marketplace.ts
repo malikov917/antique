@@ -1,12 +1,19 @@
 import type {
   AcceptOfferResponse,
+  ChatMessagesResponse,
+  ChatsResponse,
   CloseMarketSessionResponse,
   CreateListingRequest,
   CreateListingResponse,
   CreateBasketResponse,
   CreateOfferRequest,
   DeclineOfferResponse,
+  DealsMeResponse,
   CreateOfferResponse,
+  SendChatMessageRequest,
+  SendChatMessageResponse,
+  UpdateDealStatusRequest,
+  UpdateDealStatusResponse,
   OpenMarketSessionResponse,
   SellerListingOffersResponse,
   UpdateListingRequest,
@@ -348,6 +355,128 @@ export async function registerMarketplaceRoutes(
         });
         return {
           offer
+        };
+      } catch (error) {
+        if (error instanceof AuthError) {
+          return sendAuthError(reply, error);
+        }
+        throw error;
+      }
+    }
+  );
+
+  app.get<{ Reply: DealsMeResponse }>("/v1/deals/me", async (request, reply) => {
+    try {
+      const auth = await deps.authService.authenticateFromAuthorizationHeader(
+        getAuthorizationHeader(request)
+      );
+
+      return {
+        deals: deps.listingMutationService.listDealsForUser({
+          userId: auth.user.id
+        })
+      };
+    } catch (error) {
+      if (error instanceof AuthError) {
+        return sendAuthError(reply, error);
+      }
+      throw error;
+    }
+  });
+
+  app.patch<{ Params: { id: string }; Body: UpdateDealStatusRequest; Reply: UpdateDealStatusResponse }>(
+    "/v1/deals/:id/status",
+    async (request, reply) => {
+      try {
+        const auth = await deps.authService.authenticateFromAuthorizationHeader(
+          getAuthorizationHeader(request)
+        );
+        const body = assertObjectBody(request.body);
+        const status = body.status;
+        if (status !== "paid" && status !== "completed" && status !== "canceled") {
+          throw new AuthError(
+            "invalid_request",
+            "status must be one of: paid, completed, canceled",
+            400
+          );
+        }
+
+        return {
+          deal: deps.listingMutationService.updateDealStatus({
+            userId: auth.user.id,
+            dealId: request.params.id,
+            status
+          })
+        };
+      } catch (error) {
+        if (error instanceof AuthError) {
+          return sendAuthError(reply, error);
+        }
+        throw error;
+      }
+    }
+  );
+
+  app.get<{ Reply: ChatsResponse }>("/v1/chats", async (request, reply) => {
+    try {
+      const auth = await deps.authService.authenticateFromAuthorizationHeader(
+        getAuthorizationHeader(request)
+      );
+
+      return {
+        chats: deps.listingMutationService.listChatsForUser({
+          userId: auth.user.id
+        })
+      };
+    } catch (error) {
+      if (error instanceof AuthError) {
+        return sendAuthError(reply, error);
+      }
+      throw error;
+    }
+  });
+
+  app.get<{ Params: { id: string }; Reply: ChatMessagesResponse }>(
+    "/v1/chats/:id/messages",
+    async (request, reply) => {
+      try {
+        const auth = await deps.authService.authenticateFromAuthorizationHeader(
+          getAuthorizationHeader(request)
+        );
+
+        return {
+          messages: deps.listingMutationService.listChatMessages({
+            userId: auth.user.id,
+            chatId: request.params.id
+          })
+        };
+      } catch (error) {
+        if (error instanceof AuthError) {
+          return sendAuthError(reply, error);
+        }
+        throw error;
+      }
+    }
+  );
+
+  app.post<{ Params: { id: string }; Body: SendChatMessageRequest; Reply: SendChatMessageResponse }>(
+    "/v1/chats/:id/messages",
+    async (request, reply) => {
+      try {
+        const auth = await deps.authService.authenticateFromAuthorizationHeader(
+          getAuthorizationHeader(request)
+        );
+        const body = assertObjectBody(request.body);
+        if (typeof body.text !== "string" || !body.text.trim()) {
+          throw new AuthError("invalid_request", "text is required", 400);
+        }
+
+        return {
+          message: deps.listingMutationService.createChatMessage({
+            userId: auth.user.id,
+            chatId: request.params.id,
+            text: body.text.trim()
+          })
         };
       } catch (error) {
         if (error instanceof AuthError) {

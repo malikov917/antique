@@ -66,6 +66,24 @@ function validateTenantMaterialization(sqlite: Database): void {
     `,
     "tenant_materialization_incomplete:seller_sales"
   );
+  assertNoRows(
+    sqlite,
+    `
+      SELECT COUNT(*) AS count
+      FROM chats
+      WHERE tenant_id IS NULL
+    `,
+    "tenant_materialization_incomplete:chats"
+  );
+  assertNoRows(
+    sqlite,
+    `
+      SELECT COUNT(*) AS count
+      FROM chat_messages
+      WHERE tenant_id IS NULL
+    `,
+    "tenant_materialization_incomplete:chat_messages"
+  );
 
   assertNoRows(
     sqlite,
@@ -106,6 +124,26 @@ function validateTenantMaterialization(sqlite: Database): void {
       WHERE seller_sales.tenant_id != listings.tenant_id
     `,
     "tenant_materialization_mismatch:seller_sales_vs_listings"
+  );
+  assertNoRows(
+    sqlite,
+    `
+      SELECT COUNT(*) AS count
+      FROM chats
+      JOIN listings ON listings.id = chats.listing_id
+      WHERE chats.tenant_id != listings.tenant_id
+    `,
+    "tenant_materialization_mismatch:chats_vs_listings"
+  );
+  assertNoRows(
+    sqlite,
+    `
+      SELECT COUNT(*) AS count
+      FROM chat_messages
+      JOIN chats ON chats.id = chat_messages.chat_id
+      WHERE chat_messages.tenant_id != chats.tenant_id
+    `,
+    "tenant_materialization_mismatch:chat_messages_vs_chats"
   );
 }
 
@@ -346,6 +384,40 @@ export function initializeDatabase(sqlite: Database): void {
     CREATE INDEX IF NOT EXISTS idx_notification_push_attempts_notification_created
       ON notification_push_attempts(notification_id, created_at DESC);
 
+    CREATE TABLE IF NOT EXISTS chats (
+      id TEXT PRIMARY KEY,
+      deal_id TEXT NOT NULL UNIQUE,
+      listing_id TEXT NOT NULL,
+      seller_user_id TEXT NOT NULL,
+      buyer_user_id TEXT NOT NULL,
+      tenant_id TEXT,
+      created_at INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL,
+      FOREIGN KEY (deal_id) REFERENCES deals(id),
+      FOREIGN KEY (listing_id) REFERENCES listings(id),
+      FOREIGN KEY (seller_user_id) REFERENCES users(id),
+      FOREIGN KEY (buyer_user_id) REFERENCES users(id)
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_chats_tenant_updated_at
+      ON chats(tenant_id, updated_at DESC);
+
+    CREATE TABLE IF NOT EXISTS chat_messages (
+      id TEXT PRIMARY KEY,
+      chat_id TEXT NOT NULL,
+      sender_user_id TEXT NOT NULL,
+      tenant_id TEXT,
+      body TEXT NOT NULL,
+      created_at INTEGER NOT NULL,
+      FOREIGN KEY (chat_id) REFERENCES chats(id),
+      FOREIGN KEY (sender_user_id) REFERENCES users(id)
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_chat_messages_chat_created
+      ON chat_messages(chat_id, created_at ASC);
+    CREATE INDEX IF NOT EXISTS idx_chat_messages_tenant_created
+      ON chat_messages(tenant_id, created_at DESC);
+
     CREATE TABLE IF NOT EXISTS seller_sales (
       id TEXT PRIMARY KEY,
       seller_user_id TEXT NOT NULL,
@@ -514,6 +586,18 @@ export function initializeDatabase(sqlite: Database): void {
     sqlite.exec("ALTER TABLE seller_sales ADD COLUMN tenant_id TEXT");
   }
 
+  const chatColumns = sqlite.prepare("PRAGMA table_info(chats)").all() as Array<{ name: string }>;
+  if (!chatColumns.some((column) => column.name === "tenant_id")) {
+    sqlite.exec("ALTER TABLE chats ADD COLUMN tenant_id TEXT");
+  }
+
+  const chatMessageColumns = sqlite
+    .prepare("PRAGMA table_info(chat_messages)")
+    .all() as Array<{ name: string }>;
+  if (!chatMessageColumns.some((column) => column.name === "tenant_id")) {
+    sqlite.exec("ALTER TABLE chat_messages ADD COLUMN tenant_id TEXT");
+  }
+
   sqlite.exec(`
     UPDATE seller_applications
     SET tenant_id = (
@@ -574,6 +658,29 @@ export function initializeDatabase(sqlite: Database): void {
         FROM users
         WHERE users.id = seller_sales.seller_user_id
       )
+    )
+    WHERE tenant_id IS NULL;
+
+    UPDATE chats
+    SET tenant_id = COALESCE(
+      (
+        SELECT listings.tenant_id
+        FROM listings
+        WHERE listings.id = chats.listing_id
+      ),
+      (
+        SELECT users.tenant_id
+        FROM users
+        WHERE users.id = chats.seller_user_id
+      )
+    )
+    WHERE tenant_id IS NULL;
+
+    UPDATE chat_messages
+    SET tenant_id = (
+      SELECT chats.tenant_id
+      FROM chats
+      WHERE chats.id = chat_messages.chat_id
     )
     WHERE tenant_id IS NULL;
   `);
