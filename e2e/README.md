@@ -13,6 +13,10 @@
 - Flow file: `e2e/maestro/ios-tab-walkthrough.yaml`
 - Purpose: verifies deterministic tab navigation selectors and feed updates CTA behavior.
 
+## Android Tab Walkthrough (selector-based)
+- Flow file: `e2e/maestro/android-tab-walkthrough.yaml`
+- Purpose: verifies deterministic tab navigation selectors and feed updates CTA behavior on Android.
+
 ## Covered Steps
 1. Launch Expo Go.
 2. Open current Metro dev URL.

@@ -60,7 +60,8 @@ export function ReelsScreen() {
       </View>
       <Pressable
         testID="feed-updates-button"
-        accessibilityLabel="feed-updates-button"
+        accessibilityLabel="Feed updates"
+        accessibilityHint="Opens recent feed updates and notifications"
         style={styles.notificationsButton}
         onPress={() => setNotificationsOpen(true)}
       >
