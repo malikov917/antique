@@ -10,6 +10,7 @@ import { registerAuthRoutes } from "./routes/auth.js";
 import { registerSellerRoutes } from "./routes/seller.js";
 import { registerMeRoutes } from "./routes/me.js";
 import { registerMarketplaceRoutes } from "./routes/marketplace.js";
+import { registerTrustSafetyRoutes } from "./routes/trustSafety.js";
 import { type ApiConfig } from "./config.js";
 import { createDatabaseClient, type DatabaseClient } from "./db/client.js";
 import { initializeDatabase } from "./db/init.js";
@@ -21,6 +22,7 @@ import { SellerApplicationService } from "./services/sellerApplicationService.js
 import { MarketplaceService } from "./services/marketplaceService.js";
 import { SellerSalesService } from "./services/sellerSalesService.js";
 import { RetentionPurgeService } from "./services/retentionPurgeService.js";
+import { TrustSafetyService } from "./services/trustSafetyService.js";
 
 export interface BuildServerParams {
   config: ApiConfig;
@@ -72,8 +74,16 @@ export async function buildServer(params: BuildServerParams): Promise<FastifyIns
     params.now
   );
   const sellerApplicationService = new SellerApplicationService(dbClient.sqlite, params.now);
-  const marketplaceService = new MarketplaceService(dbClient.sqlite, params.now);
+  const marketplaceService = new MarketplaceService(
+    dbClient.sqlite,
+    {
+      offerSubmitPerUserPerHour: params.config.offerSubmitPerUserPerHour,
+      offerDecisionPerSellerPerHour: params.config.offerDecisionPerSellerPerHour
+    },
+    params.now
+  );
   const sellerSalesService = new SellerSalesService(dbClient.sqlite, params.now);
+  const trustSafetyService = new TrustSafetyService(dbClient.sqlite, params.now);
   const retentionPurgeService = new RetentionPurgeService(dbClient.sqlite, params.now);
   let retentionTimer: ReturnType<typeof setInterval> | undefined;
 
@@ -133,6 +143,10 @@ export async function buildServer(params: BuildServerParams): Promise<FastifyIns
     authService,
     sellerApplicationService,
     sellerSalesService
+  });
+  await registerTrustSafetyRoutes(app, {
+    authService,
+    trustSafetyService
   });
   await registerMarketplaceRoutes(app, {
     authService,

@@ -147,6 +147,42 @@ export interface RejectSellerApplicationResponse {
   application: SellerApplication;
 }
 
+export interface BlockUserResponse {
+  success: true;
+}
+
+export interface ReportUserRequest {
+  reason: string;
+  details?: string;
+}
+
+export interface ReportUserResponse {
+  reportId: string;
+  createdAt: string;
+}
+
+export interface SuspendSellerRequest {
+  reason?: string;
+}
+
+export interface SuspendSellerResponse {
+  userId: string;
+  suspendedAt: string;
+}
+
+export interface FlagListingModerationRequest {
+  reasonCode: string;
+  note?: string;
+}
+
+export interface FlagListingModerationResponse {
+  flagId: string;
+  listingId: string;
+  status: "open";
+  reasonCode: string;
+  createdAt: string;
+}
+
 export interface MeResponse {
   user: AuthUser;
 }
