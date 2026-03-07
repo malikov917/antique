@@ -28,9 +28,9 @@ interface MarketSessionRow {
 
 interface ListingAvailabilityRow {
   id: string;
+  tenant_id: string | null;
   status: ListingStatus;
   session_status: MarketSessionStatus;
-  seller_tenant_id: string;
 }
 
 interface OfferRow {
@@ -126,22 +126,24 @@ export class MarketplaceService
 
     const timestamp = this.now();
     const id = newId();
+    const sellerTenantId = this.resolveUserTenantId(sellerUserId);
     this.sqlite
       .prepare(
         `
           INSERT INTO market_sessions (
             id,
             seller_user_id,
+            tenant_id,
             status,
             opened_at,
             closed_at,
             created_at,
             updated_at
           )
-          VALUES (?, ?, 'open', ?, NULL, ?, ?)
+          VALUES (?, ?, ?, 'open', ?, NULL, ?, ?)
         `
       )
-      .run(id, sellerUserId, timestamp, timestamp, timestamp);
+      .run(id, sellerUserId, sellerTenantId, timestamp, timestamp, timestamp);
 
     const row = this.sqlite
       .prepare("SELECT * FROM market_sessions WHERE id = ? LIMIT 1")
@@ -213,17 +215,17 @@ export class MarketplaceService
   }
 
   createBasketItem(params: { buyerUserId: string; listingId: string }): BasketItem {
-    this.assertListingAllowsBuyerMutation(params.listingId, params.buyerUserId);
+    const tenantId = this.assertListingAllowsBuyerMutation(params.listingId, params.buyerUserId);
     const id = newId();
     const timestamp = this.now();
     this.sqlite
       .prepare(
         `
-          INSERT INTO basket_items (id, listing_id, buyer_user_id, created_at)
-          VALUES (?, ?, ?, ?)
+          INSERT INTO basket_items (id, listing_id, buyer_user_id, tenant_id, created_at)
+          VALUES (?, ?, ?, ?, ?)
         `
       )
-      .run(id, params.listingId, params.buyerUserId, timestamp);
+      .run(id, params.listingId, params.buyerUserId, tenantId, timestamp);
 
     return {
       id,
@@ -239,7 +241,7 @@ export class MarketplaceService
     amountCents: number;
     shippingAddress: string;
   }): Offer {
-    this.assertListingAllowsBuyerMutation(params.listingId, params.buyerUserId);
+    const tenantId = this.assertListingAllowsBuyerMutation(params.listingId, params.buyerUserId);
     const id = newId();
     const timestamp = this.now();
     this.sqlite
@@ -249,15 +251,24 @@ export class MarketplaceService
             id,
             listing_id,
             buyer_user_id,
+            tenant_id,
             amount_cents,
             shipping_address,
             status,
             created_at
           )
-          VALUES (?, ?, ?, ?, ?, 'submitted', ?)
+          VALUES (?, ?, ?, ?, ?, ?, 'submitted', ?)
         `
       )
-      .run(id, params.listingId, params.buyerUserId, params.amountCents, params.shippingAddress, timestamp);
+      .run(
+        id,
+        params.listingId,
+        params.buyerUserId,
+        tenantId,
+        params.amountCents,
+        params.shippingAddress,
+        timestamp
+      );
 
     return {
       id,
@@ -272,16 +283,18 @@ export class MarketplaceService
 
   listSellerListingOffers(params: { sellerUserId: string; listingId: string }): Offer[] {
     this.assertListingOwnedBySeller(params.listingId, params.sellerUserId);
+    const sellerTenantId = this.resolveUserTenantId(params.sellerUserId);
     const rows = this.sqlite
       .prepare(
         `
           SELECT id, listing_id, buyer_user_id, amount_cents, shipping_address, status, created_at
           FROM offers
           WHERE listing_id = ?
+            AND tenant_id = ?
           ORDER BY created_at DESC, id DESC
         `
       )
-      .all(params.listingId) as OfferRow[];
+      .all(params.listingId, sellerTenantId) as OfferRow[];
 
     return rows.map((row) => toOffer(row));
   }
@@ -413,18 +426,17 @@ export class MarketplaceService
     return tx(params.sellerUserId, params.offerId);
   }
 
-  private assertListingAllowsBuyerMutation(listingId: string, buyerUserId: string): void {
+  private assertListingAllowsBuyerMutation(listingId: string, buyerUserId: string): string {
     const row = this.sqlite
       .prepare(
         `
           SELECT
             listings.id,
+            listings.tenant_id,
             listings.status,
-            market_sessions.status AS session_status,
-            seller_user.tenant_id AS seller_tenant_id
+            market_sessions.status AS session_status
           FROM listings
           INNER JOIN market_sessions ON market_sessions.id = listings.market_session_id
-          INNER JOIN users AS seller_user ON seller_user.id = listings.seller_user_id
           WHERE listings.id = ?
           LIMIT 1
         `
@@ -441,14 +453,12 @@ export class MarketplaceService
       throw new AuthError("listing_unavailable", "Listing is no longer available", 409);
     }
 
-    const buyerTenant = this.sqlite
-      .prepare("SELECT tenant_id FROM users WHERE id = ? LIMIT 1")
-      .get(buyerUserId) as { tenant_id: string } | undefined;
-
-    if (!buyerTenant) {
-      throw new AuthError("forbidden_tenant_scope", "Buyer tenant could not be resolved", 403);
+    const buyerTenantId = this.resolveUserTenantId(buyerUserId);
+    if (!row.tenant_id) {
+      throw new AuthError("forbidden_tenant_scope", "Listing tenant could not be resolved", 403);
     }
-    requireTenantScope(row.seller_tenant_id, buyerTenant.tenant_id);
+    requireTenantScope(row.tenant_id, buyerTenantId);
+    return row.tenant_id;
   }
 
   private assertListingOwnedBySeller(listingId: string, sellerUserId: string): void {
@@ -596,5 +606,16 @@ export class MarketplaceService
         409
       );
     }
+  }
+
+  private resolveUserTenantId(userId: string): string {
+    const row = this.sqlite
+      .prepare("SELECT tenant_id FROM users WHERE id = ? LIMIT 1")
+      .get(userId) as { tenant_id: string } | undefined;
+
+    if (!row?.tenant_id) {
+      throw new AuthError("forbidden_tenant_scope", "User tenant could not be resolved", 403);
+    }
+    return row.tenant_id;
   }
 }

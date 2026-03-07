@@ -66,6 +66,7 @@ export function initializeDatabase(sqlite: Database): void {
     CREATE TABLE IF NOT EXISTS seller_applications (
       id TEXT PRIMARY KEY,
       user_id TEXT NOT NULL UNIQUE,
+      tenant_id TEXT,
       status TEXT NOT NULL,
       full_name TEXT,
       shop_name TEXT,
@@ -80,10 +81,13 @@ export function initializeDatabase(sqlite: Database): void {
     );
 
     CREATE INDEX IF NOT EXISTS idx_seller_applications_status ON seller_applications(status);
+    CREATE INDEX IF NOT EXISTS idx_seller_applications_tenant_status
+      ON seller_applications(tenant_id, status);
 
     CREATE TABLE IF NOT EXISTS market_sessions (
       id TEXT PRIMARY KEY,
       seller_user_id TEXT NOT NULL,
+      tenant_id TEXT,
       status TEXT NOT NULL,
       opened_at INTEGER NOT NULL,
       closed_at INTEGER,
@@ -94,11 +98,14 @@ export function initializeDatabase(sqlite: Database): void {
 
     CREATE INDEX IF NOT EXISTS idx_market_sessions_seller_status
       ON market_sessions(seller_user_id, status);
+    CREATE INDEX IF NOT EXISTS idx_market_sessions_tenant_seller_status
+      ON market_sessions(tenant_id, seller_user_id, status);
 
     CREATE TABLE IF NOT EXISTS listings (
       id TEXT PRIMARY KEY,
       seller_user_id TEXT NOT NULL,
       market_session_id TEXT NOT NULL,
+      tenant_id TEXT,
       status TEXT NOT NULL,
       created_at INTEGER NOT NULL,
       updated_at INTEGER NOT NULL,
@@ -108,11 +115,14 @@ export function initializeDatabase(sqlite: Database): void {
 
     CREATE INDEX IF NOT EXISTS idx_listings_session_status
       ON listings(market_session_id, status);
+    CREATE INDEX IF NOT EXISTS idx_listings_tenant_status_created
+      ON listings(tenant_id, status, created_at DESC);
 
     CREATE TABLE IF NOT EXISTS basket_items (
       id TEXT PRIMARY KEY,
       listing_id TEXT NOT NULL,
       buyer_user_id TEXT NOT NULL,
+      tenant_id TEXT,
       created_at INTEGER NOT NULL,
       FOREIGN KEY (listing_id) REFERENCES listings(id),
       FOREIGN KEY (buyer_user_id) REFERENCES users(id)
@@ -120,11 +130,14 @@ export function initializeDatabase(sqlite: Database): void {
 
     CREATE INDEX IF NOT EXISTS idx_basket_items_listing_user
       ON basket_items(listing_id, buyer_user_id);
+    CREATE INDEX IF NOT EXISTS idx_basket_items_tenant_listing_user
+      ON basket_items(tenant_id, listing_id, buyer_user_id);
 
     CREATE TABLE IF NOT EXISTS offers (
       id TEXT PRIMARY KEY,
       listing_id TEXT NOT NULL,
       buyer_user_id TEXT NOT NULL,
+      tenant_id TEXT,
       amount_cents INTEGER NOT NULL,
       shipping_address TEXT NOT NULL,
       shipping_address_purged_at INTEGER,
@@ -135,6 +148,7 @@ export function initializeDatabase(sqlite: Database): void {
     );
 
     CREATE INDEX IF NOT EXISTS idx_offers_listing_status ON offers(listing_id, status);
+    CREATE INDEX IF NOT EXISTS idx_offers_tenant_listing_status ON offers(tenant_id, listing_id, status);
     CREATE INDEX IF NOT EXISTS idx_offers_shipping_purge ON offers(shipping_address_purged_at);
 
     CREATE TABLE IF NOT EXISTS deals (
@@ -158,6 +172,7 @@ export function initializeDatabase(sqlite: Database): void {
     CREATE TABLE IF NOT EXISTS seller_sales (
       id TEXT PRIMARY KEY,
       seller_user_id TEXT NOT NULL,
+      tenant_id TEXT,
       session_id TEXT NOT NULL,
       listing_id TEXT NOT NULL,
       listing_title TEXT NOT NULL,
@@ -173,6 +188,8 @@ export function initializeDatabase(sqlite: Database): void {
 
     CREATE INDEX IF NOT EXISTS idx_seller_sales_seller_sold_at
       ON seller_sales(seller_user_id, sold_at DESC);
+    CREATE INDEX IF NOT EXISTS idx_seller_sales_tenant_seller_sold_at
+      ON seller_sales(tenant_id, seller_user_id, sold_at DESC);
     CREATE INDEX IF NOT EXISTS idx_seller_sales_pii_purged_at ON seller_sales(pii_purged_at);
 
     CREATE TABLE IF NOT EXISTS audit_events (
@@ -220,14 +237,106 @@ export function initializeDatabase(sqlite: Database): void {
   if (!sellerApplicationColumns.some((column) => column.name === "reviewed_by_user_id")) {
     sqlite.exec("ALTER TABLE seller_applications ADD COLUMN reviewed_by_user_id TEXT");
   }
+  if (!sellerApplicationColumns.some((column) => column.name === "tenant_id")) {
+    sqlite.exec("ALTER TABLE seller_applications ADD COLUMN tenant_id TEXT");
+  }
+
+  const marketSessionColumns = sqlite.prepare("PRAGMA table_info(market_sessions)").all() as Array<{
+    name: string;
+  }>;
+  if (!marketSessionColumns.some((column) => column.name === "tenant_id")) {
+    sqlite.exec("ALTER TABLE market_sessions ADD COLUMN tenant_id TEXT");
+  }
+
+  const listingColumns = sqlite.prepare("PRAGMA table_info(listings)").all() as Array<{ name: string }>;
+  if (!listingColumns.some((column) => column.name === "tenant_id")) {
+    sqlite.exec("ALTER TABLE listings ADD COLUMN tenant_id TEXT");
+  }
+
+  const basketItemColumns = sqlite.prepare("PRAGMA table_info(basket_items)").all() as Array<{
+    name: string;
+  }>;
+  if (!basketItemColumns.some((column) => column.name === "tenant_id")) {
+    sqlite.exec("ALTER TABLE basket_items ADD COLUMN tenant_id TEXT");
+  }
 
   const offerColumns = sqlite.prepare("PRAGMA table_info(offers)").all() as Array<{ name: string }>;
   if (!offerColumns.some((column) => column.name === "shipping_address_purged_at")) {
     sqlite.exec("ALTER TABLE offers ADD COLUMN shipping_address_purged_at INTEGER");
+  }
+  if (!offerColumns.some((column) => column.name === "tenant_id")) {
+    sqlite.exec("ALTER TABLE offers ADD COLUMN tenant_id TEXT");
   }
 
   const sellerSalesColumns = sqlite.prepare("PRAGMA table_info(seller_sales)").all() as Array<{ name: string }>;
   if (!sellerSalesColumns.some((column) => column.name === "pii_purged_at")) {
     sqlite.exec("ALTER TABLE seller_sales ADD COLUMN pii_purged_at INTEGER");
   }
+  if (!sellerSalesColumns.some((column) => column.name === "tenant_id")) {
+    sqlite.exec("ALTER TABLE seller_sales ADD COLUMN tenant_id TEXT");
+  }
+
+  sqlite.exec(`
+    UPDATE seller_applications
+    SET tenant_id = (
+      SELECT users.tenant_id
+      FROM users
+      WHERE users.id = seller_applications.user_id
+    )
+    WHERE tenant_id IS NULL;
+
+    UPDATE market_sessions
+    SET tenant_id = (
+      SELECT users.tenant_id
+      FROM users
+      WHERE users.id = market_sessions.seller_user_id
+    )
+    WHERE tenant_id IS NULL;
+
+    UPDATE listings
+    SET tenant_id = COALESCE(
+      (
+        SELECT market_sessions.tenant_id
+        FROM market_sessions
+        WHERE market_sessions.id = listings.market_session_id
+      ),
+      (
+        SELECT users.tenant_id
+        FROM users
+        WHERE users.id = listings.seller_user_id
+      )
+    )
+    WHERE tenant_id IS NULL;
+
+    UPDATE basket_items
+    SET tenant_id = (
+      SELECT listings.tenant_id
+      FROM listings
+      WHERE listings.id = basket_items.listing_id
+    )
+    WHERE tenant_id IS NULL;
+
+    UPDATE offers
+    SET tenant_id = (
+      SELECT listings.tenant_id
+      FROM listings
+      WHERE listings.id = offers.listing_id
+    )
+    WHERE tenant_id IS NULL;
+
+    UPDATE seller_sales
+    SET tenant_id = COALESCE(
+      (
+        SELECT listings.tenant_id
+        FROM listings
+        WHERE listings.id = seller_sales.listing_id
+      ),
+      (
+        SELECT users.tenant_id
+        FROM users
+        WHERE users.id = seller_sales.seller_user_id
+      )
+    )
+    WHERE tenant_id IS NULL;
+  `);
 }

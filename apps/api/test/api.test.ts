@@ -1329,13 +1329,13 @@ describe("auth api", () => {
     dbClient.sqlite
       .prepare(
         `
-          INSERT INTO listings (id, seller_user_id, market_session_id, status, created_at, updated_at)
+          INSERT INTO listings (id, seller_user_id, market_session_id, tenant_id, status, created_at, updated_at)
           VALUES
-            ('listing-live-1', ?, ?, 'live', 1, 1),
-            ('listing-sold-1', ?, ?, 'sold', 1, 1)
+            ('listing-live-1', ?, ?, ?, 'live', 1, 1),
+            ('listing-sold-1', ?, ?, ?, 'sold', 1, 1)
         `
       )
-      .run(seller.userId, sessionId, seller.userId, sessionId);
+      .run(seller.userId, sessionId, "default", seller.userId, sessionId, "default");
 
     const closeResponse = await app.inject({
       method: "POST",
@@ -1388,11 +1388,11 @@ describe("auth api", () => {
     dbClient.sqlite
       .prepare(
         `
-          INSERT INTO listings (id, seller_user_id, market_session_id, status, created_at, updated_at)
-          VALUES ('listing-live-2', ?, ?, 'live', 1, 1)
+          INSERT INTO listings (id, seller_user_id, market_session_id, tenant_id, status, created_at, updated_at)
+          VALUES ('listing-live-2', ?, ?, ?, 'live', 1, 1)
         `
       )
-      .run(seller.userId, sessionId);
+      .run(seller.userId, sessionId, "default");
 
     await app.inject({
       method: "POST",
@@ -1458,11 +1458,11 @@ describe("auth api", () => {
     dbClient.sqlite
       .prepare(
         `
-          INSERT INTO listings (id, seller_user_id, market_session_id, status, created_at, updated_at)
-          VALUES ('listing-win-1', ?, ?, 'live', 1, 1)
+          INSERT INTO listings (id, seller_user_id, market_session_id, tenant_id, status, created_at, updated_at)
+          VALUES ('listing-win-1', ?, ?, ?, 'live', 1, 1)
         `
       )
-      .run(seller.userId, sessionId);
+      .run(seller.userId, sessionId, "default");
 
     const firstOfferResponse = await app.inject({
       method: "POST",
@@ -1623,11 +1623,11 @@ describe("auth api", () => {
     dbClient.sqlite
       .prepare(
         `
-          INSERT INTO listings (id, seller_user_id, market_session_id, status, created_at, updated_at)
-          VALUES ('listing-live-cross-tenant', ?, ?, 'live', 1, 1)
+          INSERT INTO listings (id, seller_user_id, market_session_id, tenant_id, status, created_at, updated_at)
+          VALUES ('listing-live-cross-tenant', ?, ?, ?, 'live', 1, 1)
         `
       )
-      .run(seller.userId, sessionId);
+      .run(seller.userId, sessionId, "default");
 
     const basketResponse = await app.inject({
       method: "POST",
@@ -1743,6 +1743,7 @@ describe("auth api", () => {
           INSERT INTO seller_sales(
             id,
             seller_user_id,
+            tenant_id,
             session_id,
             listing_id,
             listing_title,
@@ -1751,10 +1752,22 @@ describe("auth api", () => {
             buyer_user_id,
             sold_at,
             created_at
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `
       )
-      .run("sale-1", seller.userId, "session-1", "listing-1", "Rare Film Reel", 12000, "USD", buyer.userId, Date.now(), Date.now());
+      .run(
+        "sale-1",
+        seller.userId,
+        "default",
+        "session-1",
+        "listing-1",
+        "Rare Film Reel",
+        12000,
+        "USD",
+        buyer.userId,
+        Date.now(),
+        Date.now()
+      );
 
     const sellerExport = await app.inject({
       method: "GET",

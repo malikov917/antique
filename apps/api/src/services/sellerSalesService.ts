@@ -107,7 +107,7 @@ export class SellerSalesService implements SellerSalesDomainService {
       throw error;
     }
 
-    const rows = this.fetchSellerSalesRows(targetSellerUserId);
+    const rows = this.fetchSellerSalesRows(targetSellerUserId, input.actor.tenantId);
     this.recordAuditEvent({
       actorUserId: input.actor.id,
       actorRole: input.actor.activeRole,
@@ -134,7 +134,7 @@ export class SellerSalesService implements SellerSalesDomainService {
     return typeof row?.suspended_at === "number";
   }
 
-  private fetchSellerSalesRows(sellerUserId: string): SellerSalesRow[] {
+  private fetchSellerSalesRows(sellerUserId: string, tenantId: string): SellerSalesRow[] {
     return this.sqlite
       .prepare(
         `
@@ -149,10 +149,11 @@ export class SellerSalesService implements SellerSalesDomainService {
             sold_at
           FROM seller_sales
           WHERE seller_user_id = ?
+            AND tenant_id = ?
           ORDER BY sold_at DESC, listing_id ASC
         `
       )
-      .all(sellerUserId) as SellerSalesRow[];
+      .all(sellerUserId, tenantId) as SellerSalesRow[];
   }
 
   private resolveUserTenantId(userId: string): string {
