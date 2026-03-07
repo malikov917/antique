@@ -1,12 +1,16 @@
 import type {
   AcceptOfferResponse,
   CloseMarketSessionResponse,
+  CreateListingRequest,
+  CreateListingResponse,
   CreateBasketResponse,
   CreateOfferRequest,
   DeclineOfferResponse,
   CreateOfferResponse,
   OpenMarketSessionResponse,
-  SellerListingOffersResponse
+  SellerListingOffersResponse,
+  UpdateListingRequest,
+  UpdateListingResponse
 } from "@antique/types";
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import { AuthError } from "../auth/errors.js";
@@ -97,6 +101,102 @@ export async function registerMarketplaceRoutes(
           requestIp: request.ip
         });
         return result;
+      } catch (error) {
+        if (error instanceof AuthError) {
+          return sendAuthError(reply, error);
+        }
+        throw error;
+      }
+    }
+  );
+
+  app.post<{ Body: CreateListingRequest; Reply: CreateListingResponse }>(
+    "/v1/listings",
+    async (request, reply) => {
+      try {
+        const auth = await deps.authService.authenticateFromAuthorizationHeader(
+          getAuthorizationHeader(request)
+        );
+        requireSellerRole(auth.user);
+        const body = assertObjectBody(request.body);
+
+        if (typeof body.title !== "string" || !body.title.trim()) {
+          throw new AuthError("invalid_request", "title is required", 400);
+        }
+        if (!Number.isInteger(body.listedPriceCents) || (body.listedPriceCents as number) <= 0) {
+          throw new AuthError("invalid_request", "listedPriceCents must be a positive integer", 400);
+        }
+        if (body.description !== undefined && typeof body.description !== "string") {
+          throw new AuthError("invalid_request", "description must be a string", 400);
+        }
+        if (body.currency !== undefined && typeof body.currency !== "string") {
+          throw new AuthError("invalid_request", "currency must be a string", 400);
+        }
+
+        return {
+          listing: deps.listingMutationService.createListing({
+            sellerUserId: auth.user.id,
+            title: body.title.trim(),
+            description: (body.description as string | undefined)?.trim() ?? "",
+            listedPriceCents: body.listedPriceCents as number,
+            currency: ((body.currency as string | undefined) ?? "USD").trim().toUpperCase()
+          })
+        };
+      } catch (error) {
+        if (error instanceof AuthError) {
+          return sendAuthError(reply, error);
+        }
+        throw error;
+      }
+    }
+  );
+
+  app.patch<{ Params: { id: string }; Body: UpdateListingRequest; Reply: UpdateListingResponse }>(
+    "/v1/listings/:id",
+    async (request, reply) => {
+      try {
+        const auth = await deps.authService.authenticateFromAuthorizationHeader(
+          getAuthorizationHeader(request)
+        );
+        requireSellerRole(auth.user);
+        const body = assertObjectBody(request.body);
+
+        if (
+          body.title === undefined &&
+          body.description === undefined &&
+          body.listedPriceCents === undefined &&
+          body.currency === undefined
+        ) {
+          throw new AuthError("invalid_request", "At least one listing field must be provided", 400);
+        }
+        if (body.title !== undefined && (typeof body.title !== "string" || !body.title.trim())) {
+          throw new AuthError("invalid_request", "title must be a non-empty string", 400);
+        }
+        if (body.description !== undefined && typeof body.description !== "string") {
+          throw new AuthError("invalid_request", "description must be a string", 400);
+        }
+        if (
+          body.listedPriceCents !== undefined &&
+          (!Number.isInteger(body.listedPriceCents) || (body.listedPriceCents as number) <= 0)
+        ) {
+          throw new AuthError("invalid_request", "listedPriceCents must be a positive integer", 400);
+        }
+        if (body.currency !== undefined && typeof body.currency !== "string") {
+          throw new AuthError("invalid_request", "currency must be a string", 400);
+        }
+
+        return {
+          listing: deps.listingMutationService.updateListing({
+            sellerUserId: auth.user.id,
+            listingId: request.params.id,
+            title: typeof body.title === "string" ? body.title.trim() : undefined,
+            description: typeof body.description === "string" ? body.description.trim() : undefined,
+            listedPriceCents:
+              typeof body.listedPriceCents === "number" ? body.listedPriceCents : undefined,
+            currency:
+              typeof body.currency === "string" ? body.currency.trim().toUpperCase() : undefined
+          })
+        };
       } catch (error) {
         if (error instanceof AuthError) {
           return sendAuthError(reply, error);

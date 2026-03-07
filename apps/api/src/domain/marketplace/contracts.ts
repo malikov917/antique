@@ -1,4 +1,4 @@
-import type { BasketItem, Deal, MarketSession, Offer } from "@antique/types";
+import type { BasketItem, Deal, Listing, MarketSession, Offer } from "@antique/types";
 
 export interface CloseMarketSessionInput {
   sellerUserId: string;
@@ -23,12 +23,31 @@ export interface CreateOfferInput {
   requestIp?: string;
 }
 
+export interface CreateListingInput {
+  sellerUserId: string;
+  title: string;
+  description: string;
+  listedPriceCents: number;
+  currency: string;
+}
+
+export interface UpdateListingInput {
+  sellerUserId: string;
+  listingId: string;
+  title?: string;
+  description?: string;
+  listedPriceCents?: number;
+  currency?: string;
+}
+
 export interface MarketSessionDomainService {
   openMarketSession(sellerUserId: string): MarketSession;
   closeMarketSession(params: CloseMarketSessionInput): CloseMarketSessionResult;
 }
 
 export interface ListingMutationDomainService {
+  createListing(params: CreateListingInput): Listing;
+  updateListing(params: UpdateListingInput): Listing;
   createBasketItem(params: CreateBasketItemInput): BasketItem;
   createOffer(params: CreateOfferInput): Offer;
   listSellerListingOffers(params: { sellerUserId: string; listingId: string }): Offer[];
