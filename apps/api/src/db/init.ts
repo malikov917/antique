@@ -1,5 +1,114 @@
 import type { Database } from "better-sqlite3";
 
+function countRows(sqlite: Database, query: string): number {
+  const row = sqlite.prepare(query).get() as { count: number } | undefined;
+  return row?.count ?? 0;
+}
+
+function assertNoRows(sqlite: Database, query: string, message: string): void {
+  if (countRows(sqlite, query) > 0) {
+    throw new Error(message);
+  }
+}
+
+function validateTenantMaterialization(sqlite: Database): void {
+  assertNoRows(
+    sqlite,
+    `
+      SELECT COUNT(*) AS count
+      FROM seller_applications
+      WHERE tenant_id IS NULL
+    `,
+    "tenant_materialization_incomplete:seller_applications"
+  );
+  assertNoRows(
+    sqlite,
+    `
+      SELECT COUNT(*) AS count
+      FROM market_sessions
+      WHERE tenant_id IS NULL
+    `,
+    "tenant_materialization_incomplete:market_sessions"
+  );
+  assertNoRows(
+    sqlite,
+    `
+      SELECT COUNT(*) AS count
+      FROM listings
+      WHERE tenant_id IS NULL
+    `,
+    "tenant_materialization_incomplete:listings"
+  );
+  assertNoRows(
+    sqlite,
+    `
+      SELECT COUNT(*) AS count
+      FROM basket_items
+      WHERE tenant_id IS NULL
+    `,
+    "tenant_materialization_incomplete:basket_items"
+  );
+  assertNoRows(
+    sqlite,
+    `
+      SELECT COUNT(*) AS count
+      FROM offers
+      WHERE tenant_id IS NULL
+    `,
+    "tenant_materialization_incomplete:offers"
+  );
+  assertNoRows(
+    sqlite,
+    `
+      SELECT COUNT(*) AS count
+      FROM seller_sales
+      WHERE tenant_id IS NULL
+    `,
+    "tenant_materialization_incomplete:seller_sales"
+  );
+
+  assertNoRows(
+    sqlite,
+    `
+      SELECT COUNT(*) AS count
+      FROM listings
+      JOIN market_sessions ON market_sessions.id = listings.market_session_id
+      WHERE listings.tenant_id != market_sessions.tenant_id
+    `,
+    "tenant_materialization_mismatch:listings_vs_market_sessions"
+  );
+  assertNoRows(
+    sqlite,
+    `
+      SELECT COUNT(*) AS count
+      FROM basket_items
+      JOIN listings ON listings.id = basket_items.listing_id
+      WHERE basket_items.tenant_id != listings.tenant_id
+    `,
+    "tenant_materialization_mismatch:basket_items_vs_listings"
+  );
+  assertNoRows(
+    sqlite,
+    `
+      SELECT COUNT(*) AS count
+      FROM offers
+      JOIN listings ON listings.id = offers.listing_id
+      WHERE offers.tenant_id != listings.tenant_id
+    `,
+    "tenant_materialization_mismatch:offers_vs_listings"
+  );
+  assertNoRows(
+    sqlite,
+    `
+      SELECT COUNT(*) AS count
+      FROM seller_sales
+      JOIN listings ON listings.id = seller_sales.listing_id
+      WHERE seller_sales.tenant_id != listings.tenant_id
+    `,
+    "tenant_materialization_mismatch:seller_sales_vs_listings"
+  );
+}
+
 export function initializeDatabase(sqlite: Database): void {
   sqlite.exec(`
     CREATE TABLE IF NOT EXISTS users (
@@ -339,4 +448,6 @@ export function initializeDatabase(sqlite: Database): void {
     )
     WHERE tenant_id IS NULL;
   `);
+
+  validateTenantMaterialization(sqlite);
 }

@@ -19,6 +19,7 @@ type ListingStatus = "live" | "day_closed" | "sold" | "withdrawn";
 interface MarketSessionRow {
   id: string;
   seller_user_id: string;
+  tenant_id: string | null;
   status: MarketSessionStatus;
   opened_at: number;
   closed_at: number | null;
@@ -156,6 +157,7 @@ export class MarketplaceService
     sellerUserId: string;
     sessionId: string;
   }): { session: MarketSession; transitionedListingCount: number } {
+    const sellerTenantId = this.resolveUserTenantId(params.sellerUserId);
     const session = this.sqlite
       .prepare("SELECT * FROM market_sessions WHERE id = ? LIMIT 1")
       .get(params.sessionId) as MarketSessionRow | undefined;
@@ -166,6 +168,10 @@ export class MarketplaceService
     if (session.seller_user_id !== params.sellerUserId) {
       throw new AuthError("forbidden_owner_mismatch", "Market session does not belong to user", 403);
     }
+    if (!session.tenant_id) {
+      throw new AuthError("forbidden_tenant_scope", "Market session tenant could not be resolved", 403);
+    }
+    requireTenantScope(session.tenant_id, sellerTenantId);
     if (session.status !== "open") {
       throw new AuthError("market_session_not_open", "Market session is already closed", 409);
     }

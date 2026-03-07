@@ -1364,6 +1364,46 @@ describe("auth api", () => {
     await app.close();
   });
 
+  it("rejects session close when authenticated seller tenant does not match session tenant", async () => {
+    const smsProvider = new TestSmsProvider();
+    const dbClient = createDatabaseClient(":memory:");
+    const app = await buildServer({
+      config: buildTestConfig(),
+      smsProvider,
+      muxClient: buildMockMuxClient(),
+      dbClient
+    });
+
+    const seller = await createAuthenticatedSeller(app, smsProvider, dbClient, "+14155552679");
+    const openResponse = await app.inject({
+      method: "POST",
+      url: "/v1/seller/sessions/open",
+      headers: {
+        authorization: `Bearer ${seller.accessToken}`
+      }
+    });
+    expect(openResponse.statusCode).toBe(200);
+    const sessionId = openResponse.json().session.id as string;
+
+    dbClient.sqlite
+      .prepare("UPDATE users SET tenant_id = ? WHERE id = ?")
+      .run("tenant-shifted", seller.userId);
+
+    const closeResponse = await app.inject({
+      method: "POST",
+      url: `/v1/seller/sessions/${sessionId}/close`,
+      headers: {
+        authorization: `Bearer ${seller.accessToken}`
+      }
+    });
+    expect(closeResponse.statusCode).toBe(403);
+    expect(closeResponse.json()).toMatchObject({
+      code: "forbidden_tenant_scope"
+    });
+
+    await app.close();
+  });
+
   it("blocks basket and offer mutations for day_closed listings", async () => {
     const smsProvider = new TestSmsProvider();
     const dbClient = createDatabaseClient(":memory:");

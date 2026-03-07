@@ -200,4 +200,78 @@ describe("tenant_id materialization", () => {
       ])
     );
   });
+
+  it("fails initialization when tenant backfill cannot resolve ownership", () => {
+    dbClient = createDatabaseClient(":memory:");
+    initializeDatabase(dbClient.sqlite);
+    dbClient.sqlite.exec("PRAGMA foreign_keys = OFF");
+
+    dbClient.sqlite
+      .prepare(
+        `
+          INSERT INTO basket_items(
+            id,
+            listing_id,
+            buyer_user_id,
+            tenant_id,
+            created_at
+          ) VALUES ('basket-orphan', 'missing-listing', 'missing-user', NULL, 1)
+        `
+      )
+      .run();
+
+    expect(() => initializeDatabase(dbClient!.sqlite)).toThrowError(
+      "tenant_materialization_incomplete:basket_items"
+    );
+    dbClient.sqlite.exec("PRAGMA foreign_keys = ON");
+  });
+
+  it("fails initialization when pre-filled tenant data is inconsistent", () => {
+    dbClient = createDatabaseClient(":memory:");
+    initializeDatabase(dbClient.sqlite);
+
+    dbClient.sqlite
+      .prepare(
+        `
+          INSERT INTO users(id, phone_e164, tenant_id, allowed_roles, active_role, created_at)
+          VALUES ('seller-mismatch', '+14155550091', 'tenant-good', '["buyer","seller"]', 'seller', 1)
+        `
+      )
+      .run();
+    dbClient.sqlite
+      .prepare(
+        `
+          INSERT INTO market_sessions(
+            id,
+            seller_user_id,
+            tenant_id,
+            status,
+            opened_at,
+            closed_at,
+            created_at,
+            updated_at
+          ) VALUES ('session-mismatch', 'seller-mismatch', 'tenant-good', 'open', 1, NULL, 1, 1)
+        `
+      )
+      .run();
+    dbClient.sqlite
+      .prepare(
+        `
+          INSERT INTO listings(
+            id,
+            seller_user_id,
+            market_session_id,
+            tenant_id,
+            status,
+            created_at,
+            updated_at
+          ) VALUES ('listing-mismatch', 'seller-mismatch', 'session-mismatch', 'tenant-other', 'live', 1, 1)
+        `
+      )
+      .run();
+
+    expect(() => initializeDatabase(dbClient!.sqlite)).toThrowError(
+      "tenant_materialization_mismatch:listings_vs_market_sessions"
+    );
+  });
 });
