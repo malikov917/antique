@@ -1819,6 +1819,205 @@ describe("auth api", () => {
     await app.close();
   });
 
+  it("supports deal status progression and per-deal chat messaging for participants", async () => {
+    const smsProvider = new TestSmsProvider();
+    const dbClient = createDatabaseClient(":memory:");
+    const app = await buildServer({
+      config: buildTestConfig(),
+      smsProvider,
+      muxClient: buildMockMuxClient(),
+      dbClient
+    });
+
+    const seller = await createAuthenticatedSeller(app, smsProvider, dbClient, "+14155552690");
+    const buyer = await createAuthenticatedUser(app, smsProvider, "+14155552691");
+    const outsider = await createAuthenticatedUser(app, smsProvider, "+14155552692");
+
+    const sessionResponse = await app.inject({
+      method: "POST",
+      url: "/v1/seller/sessions/open",
+      headers: {
+        authorization: `Bearer ${seller.accessToken}`
+      }
+    });
+    expect(sessionResponse.statusCode).toBe(200);
+    const sessionId = sessionResponse.json().session.id as string;
+
+    dbClient.sqlite
+      .prepare(
+        `
+          INSERT INTO listings (id, seller_user_id, market_session_id, tenant_id, status, created_at, updated_at)
+          VALUES ('listing-chat-1', ?, ?, ?, 'live', 1, 1)
+        `
+      )
+      .run(seller.userId, sessionId, "default");
+
+    const offerResponse = await app.inject({
+      method: "POST",
+      url: "/v1/listings/listing-chat-1/offers",
+      headers: {
+        authorization: `Bearer ${buyer.accessToken}`
+      },
+      payload: {
+        amountCents: 22000,
+        shippingAddress: "777 Cinema Ln"
+      }
+    });
+    expect(offerResponse.statusCode).toBe(200);
+    const offerId = offerResponse.json().offer.id as string;
+
+    const acceptResponse = await app.inject({
+      method: "POST",
+      url: `/v1/offers/${offerId}/accept`,
+      headers: {
+        authorization: `Bearer ${seller.accessToken}`
+      }
+    });
+    expect(acceptResponse.statusCode).toBe(200);
+    const dealId = acceptResponse.json().deal.id as string;
+    expect(acceptResponse.json().deal).toMatchObject({
+      status: "open"
+    });
+
+    const sellerDealsResponse = await app.inject({
+      method: "GET",
+      url: "/v1/deals/me",
+      headers: {
+        authorization: `Bearer ${seller.accessToken}`
+      }
+    });
+    expect(sellerDealsResponse.statusCode).toBe(200);
+    expect(sellerDealsResponse.json().deals).toHaveLength(1);
+    expect(sellerDealsResponse.json().deals[0]).toMatchObject({
+      id: dealId,
+      status: "open"
+    });
+
+    const buyerPaidResponse = await app.inject({
+      method: "PATCH",
+      url: `/v1/deals/${dealId}/status`,
+      headers: {
+        authorization: `Bearer ${buyer.accessToken}`
+      },
+      payload: {
+        status: "paid"
+      }
+    });
+    expect(buyerPaidResponse.statusCode).toBe(200);
+    expect(buyerPaidResponse.json().deal).toMatchObject({
+      id: dealId,
+      status: "paid"
+    });
+
+    const sellerCompletedResponse = await app.inject({
+      method: "PATCH",
+      url: `/v1/deals/${dealId}/status`,
+      headers: {
+        authorization: `Bearer ${seller.accessToken}`
+      },
+      payload: {
+        status: "completed"
+      }
+    });
+    expect(sellerCompletedResponse.statusCode).toBe(200);
+    expect(sellerCompletedResponse.json().deal).toMatchObject({
+      id: dealId,
+      status: "completed"
+    });
+
+    const invalidTransitionResponse = await app.inject({
+      method: "PATCH",
+      url: `/v1/deals/${dealId}/status`,
+      headers: {
+        authorization: `Bearer ${seller.accessToken}`
+      },
+      payload: {
+        status: "paid"
+      }
+    });
+    expect(invalidTransitionResponse.statusCode).toBe(409);
+    expect(invalidTransitionResponse.json()).toMatchObject({
+      code: "deal_invalid_status_transition"
+    });
+
+    const chatsResponse = await app.inject({
+      method: "GET",
+      url: "/v1/chats",
+      headers: {
+        authorization: `Bearer ${buyer.accessToken}`
+      }
+    });
+    expect(chatsResponse.statusCode).toBe(200);
+    expect(chatsResponse.json().chats).toHaveLength(1);
+    const chatId = chatsResponse.json().chats[0].id as string;
+
+    const buyerMessageResponse = await app.inject({
+      method: "POST",
+      url: `/v1/chats/${chatId}/messages`,
+      headers: {
+        authorization: `Bearer ${buyer.accessToken}`
+      },
+      payload: {
+        text: "Payment sent, please confirm."
+      }
+    });
+    expect(buyerMessageResponse.statusCode).toBe(200);
+    expect(buyerMessageResponse.json().message).toMatchObject({
+      chatId,
+      senderUserId: buyer.userId,
+      text: "Payment sent, please confirm."
+    });
+
+    const sellerMessageResponse = await app.inject({
+      method: "POST",
+      url: `/v1/chats/${chatId}/messages`,
+      headers: {
+        authorization: `Bearer ${seller.accessToken}`
+      },
+      payload: {
+        text: "Confirmed, preparing shipment."
+      }
+    });
+    expect(sellerMessageResponse.statusCode).toBe(200);
+
+    const messageListResponse = await app.inject({
+      method: "GET",
+      url: `/v1/chats/${chatId}/messages`,
+      headers: {
+        authorization: `Bearer ${seller.accessToken}`
+      }
+    });
+    expect(messageListResponse.statusCode).toBe(200);
+    expect(messageListResponse.json().messages).toHaveLength(2);
+    expect(messageListResponse.json().messages.map((message: { text: string }) => message.text)).toEqual(
+      expect.arrayContaining(["Payment sent, please confirm.", "Confirmed, preparing shipment."])
+    );
+
+    const outsiderChatsResponse = await app.inject({
+      method: "GET",
+      url: "/v1/chats",
+      headers: {
+        authorization: `Bearer ${outsider.accessToken}`
+      }
+    });
+    expect(outsiderChatsResponse.statusCode).toBe(200);
+    expect(outsiderChatsResponse.json().chats).toHaveLength(0);
+
+    const outsiderMessagesResponse = await app.inject({
+      method: "GET",
+      url: `/v1/chats/${chatId}/messages`,
+      headers: {
+        authorization: `Bearer ${outsider.accessToken}`
+      }
+    });
+    expect(outsiderMessagesResponse.statusCode).toBe(403);
+    expect(outsiderMessagesResponse.json()).toMatchObject({
+      code: "forbidden_owner_mismatch"
+    });
+
+    await app.close();
+  });
+
   it("rejects cross-tenant basket and offer mutations", async () => {
     const smsProvider = new TestSmsProvider();
     const dbClient = createDatabaseClient(":memory:");
