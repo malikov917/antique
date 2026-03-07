@@ -13,6 +13,8 @@ export interface VideoFeedItem {
   posterUrl: string;
   durationSec: number;
   status: UploadStatus;
+  freshnessUpdatedAt?: string;
+  freshnessAgeSec?: number;
 }
 
 export interface CreateUploadResponse {
@@ -218,6 +220,43 @@ export interface OpenMarketSessionResponse {
 export interface CloseMarketSessionResponse {
   session: MarketSession;
   transitionedListingCount: number;
+}
+
+export type ListingStatus = "live" | "day_closed" | "sold" | "withdrawn";
+
+export interface Listing {
+  id: string;
+  sellerUserId: string;
+  marketSessionId: string;
+  status: ListingStatus;
+  title: string;
+  description: string;
+  listedPriceCents: number;
+  currency: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface CreateListingRequest {
+  title: string;
+  description?: string;
+  listedPriceCents: number;
+  currency?: string;
+}
+
+export interface CreateListingResponse {
+  listing: Listing;
+}
+
+export interface UpdateListingRequest {
+  title?: string;
+  description?: string;
+  listedPriceCents?: number;
+  currency?: string;
+}
+
+export interface UpdateListingResponse {
+  listing: Listing;
 }
 
 export interface BasketItem {

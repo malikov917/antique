@@ -216,6 +216,10 @@ export function initializeDatabase(sqlite: Database): void {
       market_session_id TEXT NOT NULL,
       tenant_id TEXT,
       status TEXT NOT NULL,
+      title TEXT NOT NULL DEFAULT '',
+      description TEXT NOT NULL DEFAULT '',
+      listed_price_cents INTEGER NOT NULL DEFAULT 1,
+      currency TEXT NOT NULL DEFAULT 'USD',
       created_at INTEGER NOT NULL,
       updated_at INTEGER NOT NULL,
       FOREIGN KEY (seller_user_id) REFERENCES users(id),
@@ -473,6 +477,18 @@ export function initializeDatabase(sqlite: Database): void {
   const listingColumns = sqlite.prepare("PRAGMA table_info(listings)").all() as Array<{ name: string }>;
   if (!listingColumns.some((column) => column.name === "tenant_id")) {
     sqlite.exec("ALTER TABLE listings ADD COLUMN tenant_id TEXT");
+  }
+  if (!listingColumns.some((column) => column.name === "title")) {
+    sqlite.exec("ALTER TABLE listings ADD COLUMN title TEXT NOT NULL DEFAULT ''");
+  }
+  if (!listingColumns.some((column) => column.name === "description")) {
+    sqlite.exec("ALTER TABLE listings ADD COLUMN description TEXT NOT NULL DEFAULT ''");
+  }
+  if (!listingColumns.some((column) => column.name === "listed_price_cents")) {
+    sqlite.exec("ALTER TABLE listings ADD COLUMN listed_price_cents INTEGER NOT NULL DEFAULT 1");
+  }
+  if (!listingColumns.some((column) => column.name === "currency")) {
+    sqlite.exec("ALTER TABLE listings ADD COLUMN currency TEXT NOT NULL DEFAULT 'USD'");
   }
 
   const basketItemColumns = sqlite.prepare("PRAGMA table_info(basket_items)").all() as Array<{

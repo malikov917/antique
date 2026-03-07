@@ -261,6 +261,8 @@ describe("api", () => {
       playbackId: "playback-1",
       status: "ready"
     });
+    expect(typeof feedResponse.json().items[0].freshnessUpdatedAt).toBe("string");
+    expect(typeof feedResponse.json().items[0].freshnessAgeSec).toBe("number");
   });
 
   it("does not transition to ready when mux policy is non-compliant", async () => {
@@ -1471,6 +1473,186 @@ describe("auth api", () => {
     expect(offerResponse.json()).toMatchObject({
       code: "listing_day_closed"
     });
+
+    await app.close();
+  });
+
+  it("allows sellers to create and update listings only during open market sessions", async () => {
+    const smsProvider = new TestSmsProvider();
+    const dbClient = createDatabaseClient(":memory:");
+    const app = await buildServer({
+      config: buildTestConfig(),
+      smsProvider,
+      muxClient: buildMockMuxClient(),
+      dbClient
+    });
+
+    const seller = await createAuthenticatedSeller(app, smsProvider, dbClient, "+14155552677");
+
+    const withoutSession = await app.inject({
+      method: "POST",
+      url: "/v1/listings",
+      headers: {
+        authorization: `Bearer ${seller.accessToken}`
+      },
+      payload: {
+        title: "No Session Reel",
+        description: "Attempt without open market day",
+        listedPriceCents: 15000
+      }
+    });
+    expect(withoutSession.statusCode).toBe(409);
+    expect(withoutSession.json()).toMatchObject({
+      code: "market_session_not_open"
+    });
+
+    const openResponse = await app.inject({
+      method: "POST",
+      url: "/v1/seller/sessions/open",
+      headers: {
+        authorization: `Bearer ${seller.accessToken}`
+      }
+    });
+    expect(openResponse.statusCode).toBe(200);
+    const sessionId = openResponse.json().session.id as string;
+
+    const createResponse = await app.inject({
+      method: "POST",
+      url: "/v1/listings",
+      headers: {
+        authorization: `Bearer ${seller.accessToken}`
+      },
+      payload: {
+        title: "Vintage Camera Reel",
+        description: "Leica M3 in collector condition",
+        listedPriceCents: 23000,
+        currency: "usd"
+      }
+    });
+    expect(createResponse.statusCode).toBe(200);
+    const listingId = createResponse.json().listing.id as string;
+    expect(createResponse.json()).toMatchObject({
+      listing: {
+        id: listingId,
+        sellerUserId: seller.userId,
+        marketSessionId: sessionId,
+        status: "live",
+        title: "Vintage Camera Reel",
+        listedPriceCents: 23000,
+        currency: "USD"
+      }
+    });
+
+    const updateResponse = await app.inject({
+      method: "PATCH",
+      url: `/v1/listings/${listingId}`,
+      headers: {
+        authorization: `Bearer ${seller.accessToken}`
+      },
+      payload: {
+        title: "Vintage Camera Reel (Updated)",
+        listedPriceCents: 26000
+      }
+    });
+    expect(updateResponse.statusCode).toBe(200);
+    expect(updateResponse.json()).toMatchObject({
+      listing: {
+        id: listingId,
+        title: "Vintage Camera Reel (Updated)",
+        listedPriceCents: 26000
+      }
+    });
+
+    await app.inject({
+      method: "POST",
+      url: `/v1/seller/sessions/${sessionId}/close`,
+      headers: {
+        authorization: `Bearer ${seller.accessToken}`
+      }
+    });
+
+    const updateAfterClose = await app.inject({
+      method: "PATCH",
+      url: `/v1/listings/${listingId}`,
+      headers: {
+        authorization: `Bearer ${seller.accessToken}`
+      },
+      payload: {
+        listedPriceCents: 27000
+      }
+    });
+    expect(updateAfterClose.statusCode).toBe(409);
+    expect(updateAfterClose.json()).toMatchObject({
+      code: "market_session_not_open"
+    });
+
+    await app.close();
+  });
+
+  it("rejects offers below listing listed price floor", async () => {
+    const smsProvider = new TestSmsProvider();
+    const dbClient = createDatabaseClient(":memory:");
+    const app = await buildServer({
+      config: buildTestConfig(),
+      smsProvider,
+      muxClient: buildMockMuxClient(),
+      dbClient
+    });
+
+    const seller = await createAuthenticatedSeller(app, smsProvider, dbClient, "+14155552678");
+    const buyer = await createAuthenticatedUser(app, smsProvider, "+14155552679");
+
+    const openResponse = await app.inject({
+      method: "POST",
+      url: "/v1/seller/sessions/open",
+      headers: {
+        authorization: `Bearer ${seller.accessToken}`
+      }
+    });
+    expect(openResponse.statusCode).toBe(200);
+
+    const listingResponse = await app.inject({
+      method: "POST",
+      url: "/v1/listings",
+      headers: {
+        authorization: `Bearer ${seller.accessToken}`
+      },
+      payload: {
+        title: "Projector Reel",
+        listedPriceCents: 20000
+      }
+    });
+    expect(listingResponse.statusCode).toBe(200);
+    const listingId = listingResponse.json().listing.id as string;
+
+    const belowFloor = await app.inject({
+      method: "POST",
+      url: `/v1/listings/${listingId}/offers`,
+      headers: {
+        authorization: `Bearer ${buyer.accessToken}`
+      },
+      payload: {
+        amountCents: 15000,
+        shippingAddress: "10 Auction Way"
+      }
+    });
+    expect(belowFloor.statusCode).toBe(409);
+    expect(belowFloor.json()).toMatchObject({
+      code: "offer_below_listed_price"
+    });
+
+    const atFloor = await app.inject({
+      method: "POST",
+      url: `/v1/listings/${listingId}/offers`,
+      headers: {
+        authorization: `Bearer ${buyer.accessToken}`
+      },
+      payload: {
+        amountCents: 20000,
+        shippingAddress: "10 Auction Way"
+      }
+    });
+    expect(atFloor.statusCode).toBe(200);
 
     await app.close();
   });
