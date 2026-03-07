@@ -59,11 +59,12 @@ export function ReelsScreen() {
         <Text style={styles.metaText}>{error ? `Offline fallback: ${error}` : "Live feed"}</Text>
       </View>
       <Pressable
-        testID="notifications-button"
+        testID="feed-updates-button"
+        accessibilityLabel="feed-updates-button"
         style={styles.notificationsButton}
         onPress={() => setNotificationsOpen(true)}
       >
-        <Text style={styles.notificationsButtonText}>Inbox</Text>
+        <Text style={styles.notificationsButtonText}>Updates</Text>
       </Pressable>
       <Pressable testID="upload-button" style={styles.uploadButton} onPress={() => setUploadOpen(true)}>
         <Text style={styles.uploadButtonText}>Upload</Text>

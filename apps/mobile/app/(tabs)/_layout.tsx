@@ -13,10 +13,22 @@ export default function TabsLayout() {
         }
       }}
     >
-      <Tabs.Screen name="feed" options={{ title: "Feed" }} />
-      <Tabs.Screen name="inbox" options={{ title: "Inbox" }} />
-      <Tabs.Screen name="activity" options={{ title: "Activity" }} />
-      <Tabs.Screen name="profile" options={{ title: "Profile" }} />
+      <Tabs.Screen
+        name="feed"
+        options={{ title: "Feed", tabBarButtonTestID: "tab-feed", tabBarAccessibilityLabel: "Feed tab" }}
+      />
+      <Tabs.Screen
+        name="inbox"
+        options={{ title: "Inbox", tabBarButtonTestID: "tab-inbox", tabBarAccessibilityLabel: "Inbox tab" }}
+      />
+      <Tabs.Screen
+        name="activity"
+        options={{ title: "Activity", tabBarButtonTestID: "tab-activity", tabBarAccessibilityLabel: "Activity tab" }}
+      />
+      <Tabs.Screen
+        name="profile"
+        options={{ title: "Profile", tabBarButtonTestID: "tab-profile", tabBarAccessibilityLabel: "Profile tab" }}
+      />
     </Tabs>
   );
 }
