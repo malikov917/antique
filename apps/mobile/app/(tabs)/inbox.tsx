@@ -1,10 +1,5 @@
-import { PlaceholderScreen } from "../../src/screens/PlaceholderScreen";
+import { InboxScreen } from "../../src/screens/InboxScreen";
 
 export default function InboxRoute() {
-  return (
-    <PlaceholderScreen
-      title="Inbox"
-      description="Deal chat threads land here after accepted offers. Backend chat endpoints are pending."
-    />
-  );
+  return <InboxScreen />;
 }

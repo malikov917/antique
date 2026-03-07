@@ -1,8 +1,14 @@
 import { useEffect, useMemo, useState } from "react";
-import type { AnnouncementItem, NotificationItem } from "@antique/types";
+import type {
+  AnnouncementItem,
+  ListAnnouncementsResponse,
+  NotificationItem,
+  NotificationsResponse
+} from "@antique/types";
 
 const API_BASE_URL = process.env.EXPO_PUBLIC_API_BASE_URL ?? "http://localhost:4000";
 const DEV_ACCESS_TOKEN = process.env.EXPO_PUBLIC_ACCESS_TOKEN;
+const POLL_INTERVAL_MS = 12000;
 
 export interface NotificationsState {
   notifications: NotificationItem[];
@@ -48,12 +54,8 @@ export function useNotifications(): NotificationsState {
           throw new Error(`Announcements request failed: ${announcementsResponse.status}`);
         }
 
-        const notificationsPayload = (await notificationsResponse.json()) as {
-          notifications?: NotificationItem[];
-        };
-        const announcementsPayload = (await announcementsResponse.json()) as {
-          announcements?: AnnouncementItem[];
-        };
+        const notificationsPayload = (await notificationsResponse.json()) as NotificationsResponse;
+        const announcementsPayload = (await announcementsResponse.json()) as ListAnnouncementsResponse;
 
         setNotifications(notificationsPayload.notifications ?? []);
         setAnnouncements(announcementsPayload.announcements ?? []);
@@ -70,8 +72,12 @@ export function useNotifications(): NotificationsState {
     };
 
     void fetchData();
+    const intervalId = setInterval(() => {
+      void fetchData();
+    }, POLL_INTERVAL_MS);
 
     return () => {
+      clearInterval(intervalId);
       abortController.abort();
     };
   }, []);
