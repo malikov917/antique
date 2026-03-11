@@ -506,6 +506,20 @@ export function initializeDatabase(sqlite: Database): void {
     CREATE INDEX IF NOT EXISTS idx_audit_events_type_created
       ON audit_events(event_type, created_at DESC);
 
+    CREATE TABLE IF NOT EXISTS request_metrics (
+      id TEXT PRIMARY KEY,
+      method TEXT NOT NULL,
+      route_pattern TEXT NOT NULL,
+      status_code INTEGER NOT NULL,
+      duration_ms INTEGER NOT NULL,
+      created_at INTEGER NOT NULL
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_request_metrics_created
+      ON request_metrics(created_at DESC);
+    CREATE INDEX IF NOT EXISTS idx_request_metrics_route_created
+      ON request_metrics(route_pattern, created_at DESC);
+
     CREATE TABLE IF NOT EXISTS retention_purge_runs (
       id TEXT PRIMARY KEY,
       started_at INTEGER NOT NULL,

@@ -12,6 +12,7 @@ import { registerMeRoutes } from "./routes/me.js";
 import { registerMarketplaceRoutes } from "./routes/marketplace.js";
 import { registerTrustSafetyRoutes } from "./routes/trustSafety.js";
 import { registerNotificationRoutes } from "./routes/notifications.js";
+import { registerObservabilityRoutes } from "./routes/observability.js";
 import { type ApiConfig } from "./config.js";
 import { createDatabaseClient, type DatabaseClient } from "./db/client.js";
 import { initializeDatabase } from "./db/init.js";
@@ -25,6 +26,7 @@ import { SellerSalesService } from "./services/sellerSalesService.js";
 import { RetentionPurgeService } from "./services/retentionPurgeService.js";
 import { TrustSafetyService } from "./services/trustSafetyService.js";
 import { NotificationService, type NotificationPushProvider } from "./services/notificationService.js";
+import { ObservabilityService } from "./services/observabilityService.js";
 
 export interface BuildServerParams {
   config: ApiConfig;
@@ -91,6 +93,7 @@ export async function buildServer(params: BuildServerParams): Promise<FastifyIns
     now: params.now,
     pushProvider: params.notificationPushProvider
   });
+  const observabilityService = new ObservabilityService(dbClient.sqlite, params.now);
   const retentionPurgeService = new RetentionPurgeService(dbClient.sqlite, params.now);
   let retentionTimer: ReturnType<typeof setInterval> | undefined;
 
@@ -137,9 +140,24 @@ export async function buildServer(params: BuildServerParams): Promise<FastifyIns
     }
   });
 
+  app.addHook("onRequest", async (request) => {
+    request.receivedAtMs = Date.now();
+  });
+
+  app.addHook("onResponse", async (request, reply) => {
+    const receivedAtMs = request.receivedAtMs ?? Date.now();
+    const routePattern = request.routeOptions.url ?? request.url.split("?")[0] ?? "unknown";
+    observabilityService.recordRequestMetric({
+      method: request.method,
+      routePattern,
+      statusCode: reply.statusCode,
+      durationMs: Date.now() - receivedAtMs
+    });
+  });
+
   app.get("/health", async () => ({ ok: true }));
   await registerUploadRoutes(app, { uploadLifecycle });
-  await registerFeedRoutes(app, { store });
+  await registerFeedRoutes(app, { store, authService, notificationService });
   await registerAuthRoutes(app, {
     authService,
     otpRequestIpRateLimitMax: params.config.authOtpRequestPerIpPerHour,
@@ -158,6 +176,10 @@ export async function buildServer(params: BuildServerParams): Promise<FastifyIns
   await registerNotificationRoutes(app, {
     authService,
     notificationService
+  });
+  await registerObservabilityRoutes(app, {
+    authService,
+    observabilityService
   });
   await registerMarketplaceRoutes(app, {
     authService,

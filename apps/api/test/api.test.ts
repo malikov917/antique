@@ -3018,4 +3018,158 @@ describe("auth api", () => {
 
     await app.close();
   });
+
+  it("returns admin observability summary with funnel, error, and seller decision signals", async () => {
+    const smsProvider = new TestSmsProvider();
+    const dbClient = createDatabaseClient(":memory:");
+    const app = await buildServer({
+      config: buildTestConfig(),
+      smsProvider,
+      muxClient: buildMockMuxClient(),
+      dbClient
+    });
+
+    const seller = await createAuthenticatedSeller(app, smsProvider, dbClient, "+14155550161");
+    const buyer = await createAuthenticatedSession(
+      app,
+      smsProvider,
+      "+14155550162",
+      "ios-device-observability-buyer"
+    );
+    const admin = await createAuthenticatedSession(
+      app,
+      smsProvider,
+      "+14155550163",
+      "ios-device-observability-admin"
+    );
+    dbClient.sqlite
+      .prepare("UPDATE users SET allowed_roles = ?, active_role = ? WHERE id = ?")
+      .run(JSON.stringify(["buyer", "admin"]), "admin", admin.userId);
+
+    const openSession = await app.inject({
+      method: "POST",
+      url: "/v1/seller/sessions/open",
+      headers: {
+        authorization: `Bearer ${seller.accessToken}`
+      }
+    });
+    expect(openSession.statusCode).toBe(200);
+    const sessionId = openSession.json().session.id as string;
+    dbClient.sqlite
+      .prepare(
+        `
+          INSERT INTO listings (id, seller_user_id, market_session_id, tenant_id, status, created_at, updated_at)
+          VALUES (?, ?, ?, ?, 'live', ?, ?)
+        `
+      )
+      .run("listing-observability", seller.userId, sessionId, "default", Date.now(), Date.now());
+
+    const feed = await app.inject({
+      method: "GET",
+      url: "/v1/feed",
+      headers: {
+        authorization: `Bearer ${buyer.accessToken}`
+      }
+    });
+    expect(feed.statusCode).toBe(200);
+
+    const basket = await app.inject({
+      method: "POST",
+      url: "/v1/listings/listing-observability/basket",
+      headers: {
+        authorization: `Bearer ${buyer.accessToken}`
+      }
+    });
+    expect(basket.statusCode).toBe(200);
+
+    const badOffer = await app.inject({
+      method: "POST",
+      url: "/v1/listings/listing-observability/offers",
+      headers: {
+        authorization: `Bearer ${buyer.accessToken}`
+      },
+      payload: {
+        amountCents: 0,
+        shippingAddress: "Bad payload"
+      }
+    });
+    expect(badOffer.statusCode).toBe(400);
+
+    const offer = await app.inject({
+      method: "POST",
+      url: "/v1/listings/listing-observability/offers",
+      headers: {
+        authorization: `Bearer ${buyer.accessToken}`
+      },
+      payload: {
+        amountCents: 1550,
+        shippingAddress: "44 Funnel Street"
+      }
+    });
+    expect(offer.statusCode).toBe(200);
+    const offerId = offer.json().offer.id as string;
+
+    const accept = await app.inject({
+      method: "POST",
+      url: `/v1/offers/${offerId}/accept`,
+      headers: {
+        authorization: `Bearer ${seller.accessToken}`
+      }
+    });
+    expect(accept.statusCode).toBe(200);
+    const dealId = accept.json().deal.id as string;
+
+    const paid = await app.inject({
+      method: "PATCH",
+      url: `/v1/deals/${dealId}/status`,
+      headers: {
+        authorization: `Bearer ${seller.accessToken}`
+      },
+      payload: {
+        status: "paid"
+      }
+    });
+    expect(paid.statusCode).toBe(200);
+
+    const observability = await app.inject({
+      method: "GET",
+      url: "/v1/admin/observability/summary?windowHours=24",
+      headers: {
+        authorization: `Bearer ${admin.accessToken}`
+      }
+    });
+    expect(observability.statusCode).toBe(200);
+    expect(observability.json()).toMatchObject({
+      funnel: {
+        view: expect.any(Number),
+        basket: expect.any(Number),
+        offer: expect.any(Number),
+        accepted: expect.any(Number),
+        paid: expect.any(Number)
+      },
+      errors: {
+        total4xx: expect.any(Number),
+        total5xx: expect.any(Number)
+      },
+      sellerDecisionAudit: {
+        offerDecisions: expect.any(Number),
+        csvExports: expect.any(Number)
+      }
+    });
+
+    const payload = observability.json() as {
+      funnel: { view: number; basket: number; offer: number; accepted: number; paid: number };
+      errors: { total4xx: number };
+      sellerDecisionAudit: { offerDecisions: number };
+    };
+    expect(payload.funnel.view).toBeGreaterThanOrEqual(1);
+    expect(payload.funnel.basket).toBeGreaterThanOrEqual(1);
+    expect(payload.funnel.offer).toBeGreaterThanOrEqual(1);
+    expect(payload.funnel.accepted).toBeGreaterThanOrEqual(1);
+    expect(payload.funnel.paid).toBeGreaterThanOrEqual(1);
+    expect(payload.errors.total4xx).toBeGreaterThanOrEqual(1);
+    expect(payload.sellerDecisionAudit.offerDecisions).toBeGreaterThanOrEqual(1);
+
+    await app.close();
+  });
 });
