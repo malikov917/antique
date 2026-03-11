@@ -1,4 +1,4 @@
-import type { AuthRole } from "@antique/types";
+import type { AuthRole, SellerSaleFulfillmentStatus, SellerSaleLedgerEntry } from "@antique/types";
 import type { Database } from "better-sqlite3";
 import { AuthError } from "../auth/errors.js";
 import { requireTenantScope } from "../auth/guards.js";
@@ -18,6 +18,14 @@ interface SellerSalesRow {
   currency: string;
   buyer_user_id: string;
   sold_at: number;
+  fulfillment_status: SellerSaleFulfillmentStatus;
+}
+
+interface SalesQueryFilters {
+  sessionId: string | null;
+  day: string | null;
+  soldAtMin: number | null;
+  soldAtMaxExclusive: number | null;
 }
 
 interface ExportAuditEvent {
@@ -37,7 +45,52 @@ export class SellerSalesService implements SellerSalesDomainService {
   ) {}
 
   exportSalesCsv(input: ExportSalesCsvInput): ExportSalesCsvResult {
+    const { targetSellerUserId, filters } = this.authorizeAndResolve(input);
+    const rows = this.fetchSellerSalesRows(targetSellerUserId, input.actor.tenantId, filters);
+
+    this.recordAuditEvent({
+      actorUserId: input.actor.id,
+      actorRole: input.actor.activeRole,
+      targetSellerUserId,
+      outcome: "allowed",
+      reasonCode: "export_allowed",
+      requestIp: input.requestIp ?? null,
+      metadata: {
+        rowCount: rows.length,
+        sessionId: filters.sessionId,
+        day: filters.day
+      }
+    });
+
+    return {
+      csv: this.toCsv(rows),
+      fileName: `seller-sales-${targetSellerUserId}.csv`
+    };
+  }
+
+  listSalesLedger(input: ExportSalesCsvInput): SellerSaleLedgerEntry[] {
+    const { targetSellerUserId, filters } = this.authorizeAndResolve(input);
+    const rows = this.fetchSellerSalesRows(targetSellerUserId, input.actor.tenantId, filters);
+
+    return rows.map((row) => ({
+      sellerUserId: row.seller_user_id,
+      sessionId: row.session_id,
+      listingId: row.listing_id,
+      listingTitle: row.listing_title,
+      acceptedOfferAmountCents: row.accepted_offer_amount_cents,
+      currency: row.currency,
+      buyerUserId: row.buyer_user_id,
+      soldAt: new Date(row.sold_at).toISOString(),
+      fulfillmentStatus: row.fulfillment_status
+    }));
+  }
+
+  private authorizeAndResolve(input: ExportSalesCsvInput): {
+    targetSellerUserId: string;
+    filters: SalesQueryFilters;
+  } {
     const requestedSellerUserId = input.requestedSellerUserId?.trim() || null;
+    const filters = this.resolveFilters(input);
 
     if (input.actor.activeRole === "buyer") {
       this.recordAuditEvent({
@@ -47,7 +100,10 @@ export class SellerSalesService implements SellerSalesDomainService {
         outcome: "denied",
         reasonCode: "forbidden_export_role",
         requestIp: input.requestIp ?? null,
-        metadata: {}
+        metadata: {
+          sessionId: filters.sessionId,
+          day: filters.day
+        }
       });
       throw new AuthError("forbidden_export_role", "Seller or admin role is required", 403);
     }
@@ -61,7 +117,10 @@ export class SellerSalesService implements SellerSalesDomainService {
           outcome: "denied",
           reasonCode: "forbidden_seller_suspended",
           requestIp: input.requestIp ?? null,
-          metadata: {}
+          metadata: {
+            sessionId: filters.sessionId,
+            day: filters.day
+          }
         });
         throw new AuthError(
           "forbidden_seller_suspended",
@@ -78,7 +137,10 @@ export class SellerSalesService implements SellerSalesDomainService {
           outcome: "denied",
           reasonCode: "forbidden_export_scope",
           requestIp: input.requestIp ?? null,
-          metadata: {}
+          metadata: {
+            sessionId: filters.sessionId,
+            day: filters.day
+          }
         });
         throw new AuthError(
           "forbidden_export_scope",
@@ -90,6 +152,7 @@ export class SellerSalesService implements SellerSalesDomainService {
 
     const targetSellerUserId = requestedSellerUserId ?? input.actor.id;
     const targetSellerTenantId = this.resolveUserTenantId(targetSellerUserId);
+
     try {
       requireTenantScope(targetSellerTenantId, input.actor.tenantId);
     } catch (error) {
@@ -101,28 +164,48 @@ export class SellerSalesService implements SellerSalesDomainService {
           outcome: "denied",
           reasonCode: "forbidden_tenant_scope",
           requestIp: input.requestIp ?? null,
-          metadata: {}
+          metadata: {
+            sessionId: filters.sessionId,
+            day: filters.day
+          }
         });
       }
       throw error;
     }
 
-    const rows = this.fetchSellerSalesRows(targetSellerUserId, input.actor.tenantId);
-    this.recordAuditEvent({
-      actorUserId: input.actor.id,
-      actorRole: input.actor.activeRole,
+    return {
       targetSellerUserId,
-      outcome: "allowed",
-      reasonCode: "export_allowed",
-      requestIp: input.requestIp ?? null,
-      metadata: {
-        rowCount: rows.length
-      }
-    });
+      filters
+    };
+  }
+
+  private resolveFilters(input: ExportSalesCsvInput): SalesQueryFilters {
+    const sessionId = input.sessionId?.trim() || null;
+    const day = input.day?.trim() || null;
+
+    if (!day) {
+      return {
+        sessionId,
+        day: null,
+        soldAtMin: null,
+        soldAtMaxExclusive: null
+      };
+    }
+
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(day)) {
+      throw new AuthError("invalid_request", "day must be in YYYY-MM-DD format", 400);
+    }
+
+    const start = Date.parse(`${day}T00:00:00.000Z`);
+    if (!Number.isFinite(start)) {
+      throw new AuthError("invalid_request", "day must be a valid date", 400);
+    }
 
     return {
-      csv: this.toCsv(rows),
-      fileName: `seller-sales-${targetSellerUserId}.csv`
+      sessionId,
+      day,
+      soldAtMin: start,
+      soldAtMaxExclusive: start + 24 * 60 * 60 * 1000
     };
   }
 
@@ -134,26 +217,44 @@ export class SellerSalesService implements SellerSalesDomainService {
     return typeof row?.suspended_at === "number";
   }
 
-  private fetchSellerSalesRows(sellerUserId: string, tenantId: string): SellerSalesRow[] {
+  private fetchSellerSalesRows(
+    sellerUserId: string,
+    tenantId: string,
+    filters: SalesQueryFilters
+  ): SellerSalesRow[] {
     return this.sqlite
       .prepare(
         `
           SELECT
-            seller_user_id,
-            session_id,
-            listing_id,
-            listing_title,
-            accepted_offer_amount_cents,
-            currency,
-            buyer_user_id,
-            sold_at
+            seller_sales.seller_user_id,
+            seller_sales.session_id,
+            seller_sales.listing_id,
+            seller_sales.listing_title,
+            seller_sales.accepted_offer_amount_cents,
+            seller_sales.currency,
+            seller_sales.buyer_user_id,
+            seller_sales.sold_at,
+            COALESCE(deals.status, 'unknown') AS fulfillment_status
           FROM seller_sales
-          WHERE seller_user_id = ?
-            AND tenant_id = ?
-          ORDER BY sold_at DESC, listing_id ASC
+          LEFT JOIN deals ON deals.listing_id = seller_sales.listing_id
+          WHERE seller_sales.seller_user_id = ?
+            AND seller_sales.tenant_id = ?
+            AND (? IS NULL OR seller_sales.session_id = ?)
+            AND (? IS NULL OR seller_sales.sold_at >= ?)
+            AND (? IS NULL OR seller_sales.sold_at < ?)
+          ORDER BY seller_sales.sold_at DESC, seller_sales.listing_id ASC
         `
       )
-      .all(sellerUserId, tenantId) as SellerSalesRow[];
+      .all(
+        sellerUserId,
+        tenantId,
+        filters.sessionId,
+        filters.sessionId,
+        filters.soldAtMin,
+        filters.soldAtMin,
+        filters.soldAtMaxExclusive,
+        filters.soldAtMaxExclusive
+      ) as SellerSalesRow[];
   }
 
   private resolveUserTenantId(userId: string): string {
@@ -176,7 +277,8 @@ export class SellerSalesService implements SellerSalesDomainService {
       "acceptedOfferAmountCents",
       "currency",
       "buyerUserId",
-      "soldAt"
+      "soldAt",
+      "fulfillmentStatus"
     ];
 
     const lines = rows.map((row) => [
@@ -187,7 +289,8 @@ export class SellerSalesService implements SellerSalesDomainService {
       String(row.accepted_offer_amount_cents),
       row.currency,
       row.buyer_user_id,
-      new Date(row.sold_at).toISOString()
+      new Date(row.sold_at).toISOString(),
+      row.fulfillment_status
     ]);
 
     return [header, ...lines]

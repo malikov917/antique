@@ -149,6 +149,24 @@ export interface RejectSellerApplicationResponse {
   application: SellerApplication;
 }
 
+export type SellerSaleFulfillmentStatus = "open" | "paid" | "completed" | "canceled" | "unknown";
+
+export interface SellerSaleLedgerEntry {
+  sellerUserId: string;
+  sessionId: string;
+  listingId: string;
+  listingTitle: string;
+  acceptedOfferAmountCents: number;
+  currency: string;
+  buyerUserId: string;
+  soldAt: string;
+  fulfillmentStatus: SellerSaleFulfillmentStatus;
+}
+
+export interface SellerSalesLedgerResponse {
+  sales: SellerSaleLedgerEntry[];
+}
+
 export interface BlockUserResponse {
   success: true;
 }

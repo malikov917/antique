@@ -1,4 +1,4 @@
-import type { AuthUser, SellerApplication } from "@antique/types";
+import type { AuthUser, SellerApplication, SellerSaleLedgerEntry } from "@antique/types";
 
 export interface SubmitSellerApplicationInput {
   userId: string;
@@ -27,6 +27,8 @@ export interface SellerApplicationDomainService {
 export interface ExportSalesCsvInput {
   actor: AuthUser;
   requestedSellerUserId?: string;
+  sessionId?: string;
+  day?: string;
   requestIp?: string;
 }
 
@@ -37,4 +39,5 @@ export interface ExportSalesCsvResult {
 
 export interface SellerSalesDomainService {
   exportSalesCsv(input: ExportSalesCsvInput): ExportSalesCsvResult;
+  listSalesLedger(input: ExportSalesCsvInput): SellerSaleLedgerEntry[];
 }
