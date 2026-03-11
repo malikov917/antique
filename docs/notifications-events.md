@@ -11,9 +11,12 @@
 
 The backend emits `audit_events` rows with `event_type = funnel_event` for:
 
+- `feed_viewed`
+- `basket_added`
 - `offer_submitted`
 - `offer_accepted`
 - `offer_declined`
+- `deal_paid`
 - `session_opened`
 - `session_closed`
 - `announcement_posted`

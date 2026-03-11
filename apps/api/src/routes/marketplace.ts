@@ -222,11 +222,17 @@ export async function registerMarketplaceRoutes(
         );
         requireBuyerRole(auth.user);
 
+        const basketItem = deps.listingMutationService.createBasketItem({
+          buyerUserId: auth.user.id,
+          listingId: request.params.id
+        });
+        deps.notificationService?.onBasketAdded({
+          listingId: request.params.id,
+          buyerUserId: auth.user.id,
+          requestIp: request.ip
+        });
         return {
-          basketItem: deps.listingMutationService.createBasketItem({
-            buyerUserId: auth.user.id,
-            listingId: request.params.id
-          })
+          basketItem
         };
       } catch (error) {
         if (error instanceof AuthError) {
@@ -401,12 +407,19 @@ export async function registerMarketplaceRoutes(
           );
         }
 
+        const deal = deps.listingMutationService.updateDealStatus({
+          userId: auth.user.id,
+          dealId: request.params.id,
+          status
+        });
+        deps.notificationService?.onDealStatusChanged({
+          dealId: request.params.id,
+          actorUserId: auth.user.id,
+          status,
+          requestIp: request.ip
+        });
         return {
-          deal: deps.listingMutationService.updateDealStatus({
-            userId: auth.user.id,
-            dealId: request.params.id,
-            status
-          })
+          deal
         };
       } catch (error) {
         if (error instanceof AuthError) {

@@ -4,6 +4,16 @@ import { newId } from "../auth/crypto.js";
 import { AuthError } from "../auth/errors.js";
 
 type NotificationType = NotificationItem["type"];
+type FunnelEventName =
+  | "feed_viewed"
+  | "basket_added"
+  | "offer_submitted"
+  | "offer_accepted"
+  | "offer_declined"
+  | "deal_paid"
+  | "session_opened"
+  | "session_closed"
+  | "announcement_posted";
 
 interface NotificationRow {
   id: string;
@@ -265,6 +275,40 @@ export class NotificationService {
     });
   }
 
+  onFeedViewed(params: { userId: string; requestIp?: string }): void {
+    const tenantId = this.resolveUserTenantId(params.userId);
+    this.recordFunnelEvent({
+      eventName: "feed_viewed",
+      actorUserId: params.userId,
+      tenantId,
+      requestIp: params.requestIp,
+      metadata: {}
+    });
+  }
+
+  onBasketAdded(params: { listingId: string; buyerUserId: string; requestIp?: string }): void {
+    const context = this.sqlite
+      .prepare(
+        `
+          SELECT tenant_id
+          FROM listings
+          WHERE id = ?
+          LIMIT 1
+        `
+      )
+      .get(params.listingId) as { tenant_id: string | null } | undefined;
+    if (!context?.tenant_id) {
+      return;
+    }
+    this.recordFunnelEvent({
+      eventName: "basket_added",
+      actorUserId: params.buyerUserId,
+      tenantId: context.tenant_id,
+      requestIp: params.requestIp,
+      metadata: { listingId: params.listingId }
+    });
+  }
+
   onOfferDecision(params: {
     offerId: string;
     sellerUserId: string;
@@ -367,6 +411,39 @@ export class NotificationService {
       tenantId: session.tenant_id,
       requestIp: params.requestIp,
       metadata: { sessionId: params.sessionId }
+    });
+  }
+
+  onDealStatusChanged(params: {
+    dealId: string;
+    actorUserId: string;
+    status: "paid" | "completed" | "canceled";
+    requestIp?: string;
+  }): void {
+    if (params.status !== "paid") {
+      return;
+    }
+
+    const context = this.sqlite
+      .prepare(
+        `
+          SELECT deals.listing_id, listings.tenant_id
+          FROM deals
+          INNER JOIN listings ON listings.id = deals.listing_id
+          WHERE deals.id = ?
+          LIMIT 1
+        `
+      )
+      .get(params.dealId) as { listing_id: string; tenant_id: string | null } | undefined;
+    if (!context?.tenant_id) {
+      return;
+    }
+    this.recordFunnelEvent({
+      eventName: "deal_paid",
+      actorUserId: params.actorUserId,
+      tenantId: context.tenant_id,
+      requestIp: params.requestIp,
+      metadata: { dealId: params.dealId, listingId: context.listing_id }
     });
   }
 
@@ -503,7 +580,7 @@ export class NotificationService {
   }
 
   private recordFunnelEvent(params: {
-    eventName: string;
+    eventName: FunnelEventName;
     actorUserId: string;
     tenantId: string;
     requestIp?: string;
