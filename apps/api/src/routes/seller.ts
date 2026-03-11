@@ -2,6 +2,7 @@ import type {
   ApproveSellerApplicationResponse,
   RejectSellerApplicationRequest,
   RejectSellerApplicationResponse,
+  SellerSalesLedgerResponse,
   SellerApplicationResponse,
   SellerApplyRequest,
   SellerApplyResponse
@@ -124,10 +125,12 @@ export async function registerSellerRoutes(
     try {
       const accessToken = extractBearerToken(request.headers.authorization);
       const user = await deps.authService.authenticateAccessToken(accessToken);
-      const query = (request.query ?? {}) as { sellerUserId?: string };
+      const query = (request.query ?? {}) as { sellerUserId?: string; sessionId?: string; day?: string };
       const result = deps.sellerSalesService.exportSalesCsv({
         actor: user,
         requestedSellerUserId: query.sellerUserId,
+        sessionId: query.sessionId,
+        day: query.day,
         requestIp: request.ip
       });
 
@@ -135,6 +138,29 @@ export async function registerSellerRoutes(
         .header("content-type", "text/csv; charset=utf-8")
         .header("content-disposition", `attachment; filename="${result.fileName}"`)
         .send(result.csv);
+    } catch (error) {
+      if (error instanceof AuthError) {
+        return sendAuthError(reply, error);
+      }
+      throw error;
+    }
+  });
+
+  app.get<{ Reply: SellerSalesLedgerResponse }>("/v1/seller/sales", async (request, reply) => {
+    try {
+      const accessToken = extractBearerToken(request.headers.authorization);
+      const user = await deps.authService.authenticateAccessToken(accessToken);
+      const query = (request.query ?? {}) as { sellerUserId?: string; sessionId?: string; day?: string };
+
+      return {
+        sales: deps.sellerSalesService.listSalesLedger({
+          actor: user,
+          requestedSellerUserId: query.sellerUserId,
+          sessionId: query.sessionId,
+          day: query.day,
+          requestIp: request.ip
+        })
+      };
     } catch (error) {
       if (error instanceof AuthError) {
         return sendAuthError(reply, error);

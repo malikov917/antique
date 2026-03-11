@@ -2415,6 +2415,142 @@ describe("auth api", () => {
     await app.close();
   });
 
+  it("returns seller ledger and applies session/day filters to ledger and csv export", async () => {
+    const smsProvider = new TestSmsProvider();
+    const dbClient = createDatabaseClient(":memory:");
+    const app = await buildServer({
+      config: buildTestConfig(),
+      smsProvider,
+      muxClient: buildMockMuxClient(),
+      dbClient
+    });
+
+    const seller = await createAuthenticatedSession(
+      app,
+      smsProvider,
+      "+14155550010",
+      "ios-device-sales-filter-seller"
+    );
+    const buyer = await createAuthenticatedSession(
+      app,
+      smsProvider,
+      "+14155550011",
+      "ios-device-sales-filter-buyer"
+    );
+    const admin = await createAuthenticatedSession(
+      app,
+      smsProvider,
+      "+14155550012",
+      "ios-device-sales-filter-admin"
+    );
+
+    dbClient.sqlite
+      .prepare("UPDATE users SET allowed_roles = ?, active_role = ? WHERE id = ?")
+      .run(JSON.stringify(["buyer", "seller"]), "seller", seller.userId);
+    dbClient.sqlite
+      .prepare("UPDATE users SET allowed_roles = ?, active_role = ? WHERE id = ?")
+      .run(JSON.stringify(["buyer"]), "buyer", buyer.userId);
+    dbClient.sqlite
+      .prepare("UPDATE users SET allowed_roles = ?, active_role = ? WHERE id = ?")
+      .run(JSON.stringify(["buyer", "admin"]), "admin", admin.userId);
+
+    const now = Date.now();
+    const today = new Date(now).toISOString().slice(0, 10);
+    const todayMorning = Date.parse(`${today}T09:00:00.000Z`);
+    const todayEvening = Date.parse(`${today}T18:00:00.000Z`);
+    const previousDayTs = todayMorning - 24 * 60 * 60 * 1000;
+
+    dbClient.sqlite
+      .prepare(
+        `
+          INSERT INTO seller_sales(
+            id,
+            seller_user_id,
+            tenant_id,
+            session_id,
+            listing_id,
+            listing_title,
+            accepted_offer_amount_cents,
+            currency,
+            buyer_user_id,
+            sold_at,
+            created_at
+          ) VALUES
+            ('sale-f1', ?, 'default', 'session-a', 'listing-f1', 'Film A', 9000, 'USD', ?, ?, ?),
+            ('sale-f2', ?, 'default', 'session-b', 'listing-f2', 'Film B', 12000, 'USD', ?, ?, ?),
+            ('sale-f3', ?, 'default', 'session-a', 'listing-f3', 'Film C', 15000, 'USD', ?, ?, ?)
+        `
+      )
+      .run(
+        seller.userId,
+        buyer.userId,
+        todayMorning,
+        todayMorning,
+        seller.userId,
+        buyer.userId,
+        todayEvening,
+        todayEvening,
+        seller.userId,
+        buyer.userId,
+        previousDayTs,
+        previousDayTs
+      );
+
+    const ledgerResponse = await app.inject({
+      method: "GET",
+      url: "/v1/seller/sales?sessionId=session-a&day=" + today,
+      headers: {
+        authorization: `Bearer ${seller.accessToken}`
+      }
+    });
+    expect(ledgerResponse.statusCode).toBe(200);
+    const ledger = ledgerResponse.json() as {
+      sales: Array<{ listingId: string; fulfillmentStatus: string }>;
+    };
+    expect(ledger.sales).toHaveLength(1);
+    expect(ledger.sales[0]).toMatchObject({
+      listingId: "listing-f1",
+      fulfillmentStatus: "unknown"
+    });
+
+    const adminLedger = await app.inject({
+      method: "GET",
+      url: `/v1/seller/sales?sellerUserId=${seller.userId}&day=${today}`,
+      headers: {
+        authorization: `Bearer ${admin.accessToken}`
+      }
+    });
+    expect(adminLedger.statusCode).toBe(200);
+    expect((adminLedger.json() as { sales: unknown[] }).sales).toHaveLength(2);
+
+    const csvResponse = await app.inject({
+      method: "GET",
+      url: `/v1/seller/sales.csv?sessionId=session-b&day=${today}`,
+      headers: {
+        authorization: `Bearer ${seller.accessToken}`
+      }
+    });
+    expect(csvResponse.statusCode).toBe(200);
+    const csvLines = csvResponse.body.trim().split("\n");
+    expect(csvLines).toHaveLength(2);
+    expect(csvLines[1]).toContain("listing-f2");
+    expect(csvLines[1]).toContain("unknown");
+
+    const invalidDay = await app.inject({
+      method: "GET",
+      url: "/v1/seller/sales?day=11-03-2026",
+      headers: {
+        authorization: `Bearer ${seller.accessToken}`
+      }
+    });
+    expect(invalidDay.statusCode).toBe(400);
+    expect(invalidDay.json()).toMatchObject({
+      code: "invalid_request"
+    });
+
+    await app.close();
+  });
+
   it("rate limits offer submissions with explicit auth error code", async () => {
     const smsProvider = new TestSmsProvider();
     const dbClient = createDatabaseClient(":memory:");
