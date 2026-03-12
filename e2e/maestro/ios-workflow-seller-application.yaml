@@ -1,0 +1,19 @@
+appId: host.exp.Exponent
+---
+- launchApp
+- openLink: ${EXPO_DEV_URL}
+- runFlow:
+    when:
+      visible: "Continue"
+    commands:
+      - tapOn:
+          point: "92%,16%"
+- tapOn:
+    id: "tab-profile"
+- assertVisible:
+    id: "profile-screen"
+- extendedWaitUntil:
+    visible: "Seller application: approved"
+    timeout: 20000
+- assertVisible:
+    text: "User: .*\\(seller\\)"

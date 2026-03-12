@@ -17,6 +17,22 @@
 - Flow file: `e2e/maestro/android-tab-walkthrough.yaml`
 - Purpose: verifies deterministic tab navigation selectors and feed updates CTA behavior on Android.
 
+## iOS PRODUCT Workflow Coverage
+- Runner: `pnpm ensure:workflows`
+- Flows:
+  - `e2e/maestro/ios-workflow-buyer-offer.yaml`
+  - `e2e/maestro/ios-workflow-seller-application.yaml`
+  - `e2e/maestro/ios-workflow-day-close.yaml`
+- Includes deterministic API workflow setup and writes machine-readable summary/artifacts under `reports/e2e-artifacts`.
+
+## Android PRODUCT Workflow Coverage
+- Runner: `pnpm ensure:workflows:android`
+- Flows:
+  - `e2e/maestro/android-workflow-buyer-offer.yaml`
+  - `e2e/maestro/android-workflow-seller-application.yaml`
+  - `e2e/maestro/android-workflow-day-close.yaml`
+- Includes deterministic API workflow setup and writes machine-readable summary/artifacts under `reports/e2e-artifacts`.
+
 ## Covered Steps
 1. Launch Expo Go.
 2. Open current Metro dev URL.
