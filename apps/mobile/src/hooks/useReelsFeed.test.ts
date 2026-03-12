@@ -90,6 +90,7 @@ describe("toPlayableItems", () => {
       {
         id: "announcement-1",
         sellerUserId: "seller-a",
+        source: "manual",
         title: "Market opens at 6pm",
         body: "Bring your latest finds.",
         createdAt: "2026-03-12T00:00:00.000Z"

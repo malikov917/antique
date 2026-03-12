@@ -31,6 +31,8 @@ interface AnnouncementRow {
   id: string;
   tenant_id: string;
   seller_user_id: string;
+  source: "manual" | "system";
+  event_type: "market_session_opened" | "market_session_closed" | null;
   title: string;
   body: string;
   created_at: number;
@@ -90,6 +92,8 @@ function toAnnouncementItem(row: AnnouncementRow): AnnouncementItem {
   return {
     id: row.id,
     sellerUserId: row.seller_user_id,
+    source: row.source,
+    eventType: row.event_type ?? undefined,
     title: row.title,
     body: row.body,
     createdAt: toIso(row.created_at)
@@ -156,7 +160,7 @@ export class NotificationService {
     const rows = this.sqlite
       .prepare(
         `
-          SELECT id, tenant_id, seller_user_id, title, body, created_at
+          SELECT id, tenant_id, seller_user_id, source, event_type, title, body, created_at
           FROM announcements
           WHERE tenant_id = ?
           ORDER BY created_at DESC, id DESC
@@ -185,10 +189,12 @@ export class NotificationService {
             id,
             tenant_id,
             seller_user_id,
+            source,
+            event_type,
             title,
             body,
             created_at
-          ) VALUES (?, ?, ?, ?, ?, ?)
+          ) VALUES (?, ?, ?, 'manual', NULL, ?, ?, ?)
         `
       )
       .run(id, tenantId, params.actorUserId, params.title, params.body, timestamp);
@@ -225,7 +231,7 @@ export class NotificationService {
     const row = this.sqlite
       .prepare(
         `
-          SELECT id, tenant_id, seller_user_id, title, body, created_at
+          SELECT id, tenant_id, seller_user_id, source, event_type, title, body, created_at
           FROM announcements
           WHERE id = ?
           LIMIT 1
@@ -391,6 +397,12 @@ export class NotificationService {
       )
       .all(session.tenant_id) as Array<{ id: string }>;
 
+    const announcementId = this.createSystemSessionAnnouncement({
+      tenantId: session.tenant_id,
+      sellerUserId: params.sellerUserId,
+      state: params.state
+    });
+
     for (const user of users) {
       this.createNotification({
         userId: user.id,
@@ -401,7 +413,11 @@ export class NotificationService {
           params.state === "opened"
             ? "Seller started a new market day."
             : "Seller closed the market day.",
-        metadata: { sessionId: params.sessionId, sellerUserId: params.sellerUserId }
+        metadata: {
+          sessionId: params.sessionId,
+          sellerUserId: params.sellerUserId,
+          announcementId
+        }
       });
     }
 
@@ -492,6 +508,42 @@ export class NotificationService {
       message: params.message,
       metadata: params.metadata
     });
+  }
+
+  private createSystemSessionAnnouncement(params: {
+    tenantId: string;
+    sellerUserId: string;
+    state: "opened" | "closed";
+  }): string {
+    const id = newId();
+    const timestamp = this.now();
+    this.sqlite
+      .prepare(
+        `
+          INSERT INTO announcements (
+            id,
+            tenant_id,
+            seller_user_id,
+            source,
+            event_type,
+            title,
+            body,
+            created_at
+          ) VALUES (?, ?, ?, 'system', ?, ?, ?, ?)
+        `
+      )
+      .run(
+        id,
+        params.tenantId,
+        params.sellerUserId,
+        params.state === "opened" ? "market_session_opened" : "market_session_closed",
+        params.state === "opened" ? "Market day opened" : "Market day closed",
+        params.state === "opened"
+          ? "Seller started a new market day."
+          : "Seller closed the market day.",
+        timestamp
+      );
+    return id;
   }
 
   private async dispatchPushWithRetry(params: {

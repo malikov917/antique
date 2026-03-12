@@ -419,6 +419,8 @@ export interface RegisterPushTokenResponse {
 export interface AnnouncementItem {
   id: string;
   sellerUserId: string;
+  source: "manual" | "system";
+  eventType?: "market_session_opened" | "market_session_closed";
   title: string;
   body: string;
   createdAt: string;

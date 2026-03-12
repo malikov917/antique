@@ -4,7 +4,6 @@ import { createDatabaseClient } from "../src/db/client.js";
 import {
   buildMockMuxClient,
   buildTestConfig,
-  createAuthenticatedBuyer,
   createAuthenticatedSeller,
   createAuthenticatedSession,
   createAuthenticatedUser,
@@ -309,6 +308,73 @@ describe("trust safety notifications api", () => {
       )
       .get() as { reason_code: string } | undefined;
     expect(funnelEvent?.reason_code).toBe("announcement_posted");
+
+    await app.close();
+  });
+
+  it("auto-publishes market session open/close announcements for feed cards", async () => {
+    const smsProvider = new TestSmsProvider();
+    const dbClient = createDatabaseClient(":memory:");
+    const app = await buildServer({
+      config: buildTestConfig(),
+      smsProvider,
+      muxClient: buildMockMuxClient(),
+      dbClient
+    });
+
+    const seller = await createAuthenticatedSeller(app, smsProvider, dbClient, "+14155550143");
+    const buyer = await createAuthenticatedSession(
+      app,
+      smsProvider,
+      "+14155550144",
+      "ios-device-announcements-system-buyer"
+    );
+
+    const openSession = await app.inject({
+      method: "POST",
+      url: "/v1/seller/sessions/open",
+      headers: {
+        authorization: `Bearer ${seller.accessToken}`
+      }
+    });
+    expect(openSession.statusCode).toBe(200);
+    const sessionId = openSession.json().session.id as string;
+
+    const closeSession = await app.inject({
+      method: "POST",
+      url: `/v1/seller/sessions/${sessionId}/close`,
+      headers: {
+        authorization: `Bearer ${seller.accessToken}`
+      }
+    });
+    expect(closeSession.statusCode).toBe(200);
+
+    const listAnnouncements = await app.inject({
+      method: "GET",
+      url: "/v1/announcements",
+      headers: {
+        authorization: `Bearer ${buyer.accessToken}`
+      }
+    });
+    expect(listAnnouncements.statusCode).toBe(200);
+    expect(listAnnouncements.json().announcements).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          source: "system",
+          eventType: "market_session_opened",
+          sellerUserId: seller.userId,
+          title: "Market day opened",
+          body: "Seller started a new market day."
+        }),
+        expect.objectContaining({
+          source: "system",
+          eventType: "market_session_closed",
+          sellerUserId: seller.userId,
+          title: "Market day closed",
+          body: "Seller closed the market day."
+        })
+      ])
+    );
 
     await app.close();
   });
