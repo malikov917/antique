@@ -73,7 +73,7 @@ export function ProfileScreen() {
   const [shopName, setShopName] = useState("");
   const [note, setNote] = useState("");
   const [busy, setBusy] = useState(false);
-  const [message, setMessage] = useState("Authenticate to load profile data.");
+  const [message, setMessage] = useState("Sign in to unlock profile and seller tools.");
 
   const isAuthed = accessToken.trim().length > 0;
 
@@ -265,13 +265,20 @@ export function ProfileScreen() {
     <ScrollView style={styles.root} contentContainerStyle={styles.content} testID="profile-screen">
       <View style={styles.section}>
         <Text style={styles.sectionTitle}>Profile</Text>
-        <Text style={styles.help}>
-          Use OTP auth to manage display name, active role, and seller application status.
-        </Text>
+        <Text style={styles.help}>Sign in with your phone first, then finish profile setup and seller onboarding.</Text>
+      </View>
+
+      <View style={styles.section} testID="profile-onboarding-steps">
+        <Text style={styles.label}>Getting started</Text>
+        <Text style={styles.stepLine}>{isAuthed ? "1. Signed in" : "1. Sign in with phone number"}</Text>
+        <Text style={styles.stepLine}>2. Add your display name and select your role</Text>
+        <Text style={styles.stepLine}>3. Submit seller application details if you plan to sell</Text>
       </View>
 
       <View style={styles.section}>
-        <Text style={styles.label}>Phone (E.164)</Text>
+        <Text style={styles.label}>Step 1: Sign in with phone number</Text>
+        <Text style={styles.help}>We send a one-time code to verify your identity on this device.</Text>
+        <Text style={styles.label}>Phone number (E.164)</Text>
         <TextInput
           value={phone}
           onChangeText={setPhone}
@@ -281,10 +288,10 @@ export function ProfileScreen() {
           placeholderTextColor="#7d7d7d"
         />
         <Pressable onPress={() => void requestOtp()} style={styles.primaryButton} disabled={busy}>
-          <Text style={styles.primaryButtonText}>Request OTP</Text>
+          <Text style={styles.primaryButtonText}>Send sign-in code</Text>
         </Pressable>
 
-        <Text style={styles.label}>OTP code</Text>
+        <Text style={styles.label}>One-time code</Text>
         <TextInput
           value={otpCode}
           onChangeText={setOtpCode}
@@ -294,11 +301,13 @@ export function ProfileScreen() {
           placeholderTextColor="#7d7d7d"
         />
         <Pressable onPress={() => void verifyOtp()} style={styles.primaryButton} disabled={busy}>
-          <Text style={styles.primaryButtonText}>Verify + Sign In</Text>
+          <Text style={styles.primaryButtonText}>Confirm code and sign in</Text>
         </Pressable>
       </View>
 
       <View style={styles.section}>
+        <Text style={styles.label}>Step 2: Profile basics</Text>
+        {!isAuthed ? <Text style={styles.lockedHint}>Sign in first to edit your display name.</Text> : null}
         <Text style={styles.label}>Display name</Text>
         <TextInput
           value={displayName}
@@ -315,7 +324,8 @@ export function ProfileScreen() {
       </View>
 
       <View style={styles.section}>
-        <Text style={styles.label}>Role switch</Text>
+        <Text style={styles.label}>Step 2: Active role</Text>
+        {!isAuthed ? <Text style={styles.lockedHint}>Role switching unlocks after sign-in.</Text> : null}
         <View style={styles.roleRow}>
           {(["buyer", "seller", "admin"] as const).map((role) => (
             <Pressable
@@ -336,7 +346,10 @@ export function ProfileScreen() {
       </View>
 
       <View style={styles.section}>
-        <Text style={styles.label}>Seller application</Text>
+        <Text style={styles.label}>Step 3: Seller application</Text>
+        {!isAuthed ? (
+          <Text style={styles.lockedHint}>Sign in to submit seller details and track application status.</Text>
+        ) : null}
         <TextInput
           value={fullName}
           onChangeText={setFullName}
@@ -409,6 +422,15 @@ const styles = StyleSheet.create({
     color: "#bfbfbf",
     fontSize: 14,
     lineHeight: 20
+  },
+  stepLine: {
+    color: "#d7d7d7",
+    fontSize: 14,
+    lineHeight: 20
+  },
+  lockedHint: {
+    color: "#a5a5a5",
+    fontSize: 12
   },
   label: {
     color: "#dddddd",
