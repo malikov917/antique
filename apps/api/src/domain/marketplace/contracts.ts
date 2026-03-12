@@ -58,6 +58,9 @@ export interface ListingMutationDomainService {
   updateListing(params: UpdateListingInput): Listing;
   createBasketItem(params: CreateBasketItemInput): BasketItem;
   createOffer(params: CreateOfferInput): Offer;
+}
+
+export interface DealDomainService {
   listSellerListingOffers(params: { sellerUserId: string; listingId: string }): Offer[];
   listDealsForUser(params: { userId: string }): Deal[];
   updateDealStatus(params: {
@@ -65,9 +68,6 @@ export interface ListingMutationDomainService {
     dealId: string;
     status: "paid" | "completed" | "canceled";
   }): Deal;
-  listChatsForUser(params: { userId: string }): Chat[];
-  listChatMessages(params: { userId: string; chatId: string }): ChatMessage[];
-  createChatMessage(params: { userId: string; chatId: string; text: string }): ChatMessage;
   acceptOffer(params: { sellerUserId: string; offerId: string; requestIp?: string }): {
     offer: Offer;
     deal: Deal;
@@ -76,14 +76,9 @@ export interface ListingMutationDomainService {
   declineOffer(params: { sellerUserId: string; offerId: string; requestIp?: string }): Offer;
 }
 
-// Forward contracts for upcoming P2-P4 extraction work.
-export interface DealDomainService {
-  acceptOffer(params: { sellerUserId: string; offerId: string }): {
-    offer: Offer;
-    deal: Deal;
-    autoDeclinedCount: number;
-  };
-  declineOffer(params: { sellerUserId: string; offerId: string }): Offer;
+export interface ChatDomainService {
+  listChatsForUser(params: { userId: string }): Chat[];
+  listChatMessages(params: { userId: string; chatId: string }): ChatMessage[];
+  createChatMessage(params: { userId: string; chatId: string; text: string }): ChatMessage;
 }
-export interface ChatDomainService {}
 export interface NotificationDomainService {}

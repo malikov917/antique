@@ -22,6 +22,8 @@ import { AuthService, type SmsProvider } from "./services/authService.js";
 import { LoggingSmsProvider } from "./services/smsProvider.js";
 import { SellerApplicationService } from "./services/sellerApplicationService.js";
 import { MarketplaceService } from "./services/marketplaceService.js";
+import { SqliteDealDomainService } from "./services/dealDomainService.js";
+import { SqliteChatDomainService } from "./services/chatDomainService.js";
 import { SellerSalesService } from "./services/sellerSalesService.js";
 import { RetentionPurgeService } from "./services/retentionPurgeService.js";
 import { TrustSafetyService } from "./services/trustSafetyService.js";
@@ -87,6 +89,14 @@ export async function buildServer(params: BuildServerParams): Promise<FastifyIns
     },
     params.now
   );
+  const dealService = new SqliteDealDomainService(
+    dbClient.sqlite,
+    {
+      offerDecisionPerSellerPerHour: params.config.offerDecisionPerSellerPerHour
+    },
+    params.now
+  );
+  const chatService = new SqliteChatDomainService(dbClient.sqlite, params.now);
   const sellerSalesService = new SellerSalesService(dbClient.sqlite, params.now);
   const trustSafetyService = new TrustSafetyService(dbClient.sqlite, params.now);
   const notificationService = new NotificationService(dbClient.sqlite, {
@@ -185,6 +195,8 @@ export async function buildServer(params: BuildServerParams): Promise<FastifyIns
     authService,
     marketSessionService: marketplaceService,
     listingMutationService: marketplaceService,
+    dealService,
+    chatService,
     notificationService
   });
   await registerWebhookRoutes(app, {
