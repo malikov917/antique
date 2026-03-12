@@ -2,6 +2,7 @@ import type {
   BasketItem,
   Chat,
   ChatMessage,
+  DealAddressCorrection,
   Deal,
   Listing,
   MarketSession,
@@ -76,6 +77,20 @@ export interface DealDomainService {
     reasonCode?: string;
     refundConfirmed?: boolean;
   }): Deal;
+  createAddressCorrection(params: {
+    userId: string;
+    dealId: string;
+    shippingAddress: string;
+    reason: string;
+    requestIp?: string;
+  }): { correction: DealAddressCorrection; deal: Deal };
+  resolveAddressCorrection(params: {
+    actorUserId: string;
+    dealId: string;
+    correctionId: string;
+    decision: "approve" | "reject";
+    requestIp?: string;
+  }): { correction: DealAddressCorrection; deal: Deal };
   acceptOffer(params: { sellerUserId: string; offerId: string; requestIp?: string }): {
     offer: Offer;
     deal: Deal;

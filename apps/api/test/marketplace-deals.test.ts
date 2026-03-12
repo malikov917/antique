@@ -1194,4 +1194,143 @@ describe("marketplace deals api", () => {
 
     await app.close();
   });
+
+  it("supports address correction request/approval flow with audited metadata", async () => {
+    const smsProvider = new TestSmsProvider();
+    const dbClient = createDatabaseClient(":memory:");
+    const app = await buildServer({
+      config: buildTestConfig(),
+      smsProvider,
+      muxClient: buildMockMuxClient(),
+      dbClient
+    });
+
+    const seller = await createAuthenticatedSeller(app, smsProvider, dbClient, "+14155550161");
+    const buyer = await createAuthenticatedBuyer(app, smsProvider, "+14155550162");
+
+    const openSession = await app.inject({
+      method: "POST",
+      url: "/v1/seller/sessions/open",
+      headers: {
+        authorization: `Bearer ${seller.accessToken}`
+      }
+    });
+    expect(openSession.statusCode).toBe(200);
+
+    const listing = await app.inject({
+      method: "POST",
+      url: "/v1/listings",
+      headers: {
+        authorization: `Bearer ${seller.accessToken}`
+      },
+      payload: {
+        title: "Address correction listing",
+        listedPriceCents: 5000
+      }
+    });
+    expect(listing.statusCode).toBe(200);
+    const listingId = listing.json().listing.id as string;
+
+    const offerResponse = await app.inject({
+      method: "POST",
+      url: `/v1/listings/${listingId}/offers`,
+      headers: {
+        authorization: `Bearer ${buyer}`
+      },
+      payload: {
+        amountCents: 5100,
+        shippingAddress: "Old Shipping Address 1"
+      }
+    });
+    expect(offerResponse.statusCode).toBe(200);
+    const offerId = offerResponse.json().offer.id as string;
+
+    const acceptResponse = await app.inject({
+      method: "POST",
+      url: `/v1/offers/${offerId}/accept`,
+      headers: {
+        authorization: `Bearer ${seller.accessToken}`
+      }
+    });
+    expect(acceptResponse.statusCode).toBe(200);
+    const dealId = acceptResponse.json().deal.id as string;
+
+    const requestCorrection = await app.inject({
+      method: "POST",
+      url: `/v1/deals/${dealId}/address-corrections`,
+      headers: {
+        authorization: `Bearer ${buyer}`
+      },
+      payload: {
+        shippingAddress: "New Shipping Address 9",
+        reason: "Apartment number changed"
+      }
+    });
+    expect(requestCorrection.statusCode).toBe(200);
+    const correctionId = requestCorrection.json().correction.id as string;
+    expect(requestCorrection.json().deal).toMatchObject({
+      activeShippingAddress: "Old Shipping Address 1",
+      addressCorrection: {
+        latestCorrectionId: correctionId,
+        latestStatus: "pending",
+        pendingCount: 1
+      }
+    });
+
+    const approveCorrection = await app.inject({
+      method: "POST",
+      url: `/v1/deals/${dealId}/address-corrections/${correctionId}/approve`,
+      headers: {
+        authorization: `Bearer ${seller.accessToken}`
+      }
+    });
+    expect(approveCorrection.statusCode).toBe(200);
+    expect(approveCorrection.json().deal).toMatchObject({
+      activeShippingAddress: "New Shipping Address 9",
+      addressCorrection: {
+        latestCorrectionId: correctionId,
+        latestStatus: "approved",
+        pendingCount: 0
+      }
+    });
+
+    const dealRows = await app.inject({
+      method: "GET",
+      url: "/v1/deals/me",
+      headers: {
+        authorization: `Bearer ${buyer}`
+      }
+    });
+    expect(dealRows.statusCode).toBe(200);
+    expect(dealRows.json().deals).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: dealId,
+          activeShippingAddress: "New Shipping Address 9",
+          addressCorrection: expect.objectContaining({
+            latestCorrectionId: correctionId,
+            latestStatus: "approved"
+          })
+        })
+      ])
+    );
+
+    const auditRows = dbClient.sqlite
+      .prepare(
+        `
+          SELECT reason_code, metadata_json
+          FROM audit_events
+          WHERE event_type = 'deal_address_correction'
+          ORDER BY created_at ASC
+        `
+      )
+      .all() as Array<{ reason_code: string; metadata_json: string }>;
+    expect(auditRows.map((row) => row.reason_code)).toEqual([
+      "deal_address_correction_requested",
+      "deal_address_correction_approved"
+    ]);
+    expect(auditRows[0]?.metadata_json).not.toContain("New Shipping Address 9");
+
+    await app.close();
+  });
 });

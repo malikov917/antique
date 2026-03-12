@@ -74,6 +74,27 @@ export class RetentionPurgeService {
           )
           .run(PURGED_VALUE, nowTs, offerThreshold).changes;
 
+        const purgedCorrectionAddresses = this.sqlite
+          .prepare(
+            `
+              UPDATE deal_address_corrections
+              SET proposed_shipping_address = ?,
+                  proposed_shipping_address_purged_at = ?
+              WHERE proposed_shipping_address_purged_at IS NULL
+                AND deal_id IN (
+                  SELECT deals.id
+                  FROM deals
+                  INNER JOIN listings ON listings.id = deals.listing_id
+                  INNER JOIN market_sessions ON market_sessions.id = listings.market_session_id
+                  WHERE listings.status IN ('day_closed', 'sold', 'withdrawn')
+                    AND market_sessions.status = 'closed'
+                    AND market_sessions.closed_at IS NOT NULL
+                    AND market_sessions.closed_at <= ?
+                )
+            `
+          )
+          .run(PURGED_VALUE, nowTs, offerThreshold).changes;
+
         const purgedSellerSalesPii = this.sqlite
           .prepare(
             `
@@ -102,7 +123,7 @@ export class RetentionPurgeService {
           .run(auditThreshold).changes;
 
         return {
-          purgedOfferAddresses,
+          purgedOfferAddresses: purgedOfferAddresses + purgedCorrectionAddresses,
           purgedSellerSalesPii,
           purgedAuditEvents
         };
@@ -170,6 +191,26 @@ export class RetentionPurgeService {
       )
       .get(offerThreshold) as { total: number };
 
+    const dueCorrectionAddressPurges = this.sqlite
+      .prepare(
+        `
+          SELECT COUNT(*) AS total
+          FROM deal_address_corrections
+          WHERE proposed_shipping_address_purged_at IS NULL
+            AND deal_id IN (
+              SELECT deals.id
+              FROM deals
+              INNER JOIN listings ON listings.id = deals.listing_id
+              INNER JOIN market_sessions ON market_sessions.id = listings.market_session_id
+              WHERE listings.status IN ('day_closed', 'sold', 'withdrawn')
+                AND market_sessions.status = 'closed'
+                AND market_sessions.closed_at IS NOT NULL
+                AND market_sessions.closed_at <= ?
+            )
+        `
+      )
+      .get(offerThreshold) as { total: number };
+
     const dueSellerSalesPiiPurges = this.sqlite
       .prepare(
         `
@@ -222,7 +263,7 @@ export class RetentionPurgeService {
       .get() as { status: "running" | "succeeded" | "failed"; started_at: number } | undefined;
 
     return {
-      dueOfferAddressPurges: dueOfferAddressPurges.total,
+      dueOfferAddressPurges: dueOfferAddressPurges.total + dueCorrectionAddressPurges.total,
       dueSellerSalesPiiPurges: dueSellerSalesPiiPurges.total,
       dueAuditEventPurges: dueAuditEventPurges.total,
       oldestDueOfferClosedAt:

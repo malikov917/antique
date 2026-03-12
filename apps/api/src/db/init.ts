@@ -323,6 +323,33 @@ export function initializeDatabase(sqlite: Database): void {
 
     CREATE INDEX IF NOT EXISTS idx_deals_seller_created_at
       ON deals(seller_user_id, created_at DESC);
+    CREATE INDEX IF NOT EXISTS idx_deals_buyer_created_at
+      ON deals(buyer_user_id, created_at DESC);
+
+    CREATE TABLE IF NOT EXISTS deal_address_corrections (
+      id TEXT PRIMARY KEY,
+      deal_id TEXT NOT NULL,
+      tenant_id TEXT NOT NULL,
+      requested_by_user_id TEXT NOT NULL,
+      status TEXT NOT NULL,
+      reason TEXT NOT NULL,
+      proposed_shipping_address TEXT NOT NULL,
+      proposed_shipping_address_purged_at INTEGER,
+      resolved_by_user_id TEXT,
+      resolved_at INTEGER,
+      created_at INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL,
+      FOREIGN KEY (deal_id) REFERENCES deals(id),
+      FOREIGN KEY (requested_by_user_id) REFERENCES users(id),
+      FOREIGN KEY (resolved_by_user_id) REFERENCES users(id)
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_deal_address_corrections_deal_created
+      ON deal_address_corrections(deal_id, created_at DESC);
+    CREATE INDEX IF NOT EXISTS idx_deal_address_corrections_tenant_status
+      ON deal_address_corrections(tenant_id, status, created_at DESC);
+    CREATE INDEX IF NOT EXISTS idx_deal_address_corrections_pii_purge
+      ON deal_address_corrections(proposed_shipping_address_purged_at);
     CREATE TABLE IF NOT EXISTS announcements (
       id TEXT PRIMARY KEY,
       tenant_id TEXT NOT NULL,
@@ -620,6 +647,16 @@ export function initializeDatabase(sqlite: Database): void {
     SET payment_due_at = created_at + 172800000
     WHERE payment_due_at IS NULL
   `);
+
+  const dealAddressCorrectionColumns = sqlite
+    .prepare("PRAGMA table_info(deal_address_corrections)")
+    .all() as Array<{ name: string }>;
+  if (
+    dealAddressCorrectionColumns.length > 0 &&
+    !dealAddressCorrectionColumns.some((column) => column.name === "proposed_shipping_address_purged_at")
+  ) {
+    sqlite.exec("ALTER TABLE deal_address_corrections ADD COLUMN proposed_shipping_address_purged_at INTEGER");
+  }
 
   const sellerSalesColumns = sqlite.prepare("PRAGMA table_info(seller_sales)").all() as Array<{ name: string }>;
   if (!sellerSalesColumns.some((column) => column.name === "pii_purged_at")) {
