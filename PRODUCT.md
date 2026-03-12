@@ -1,6 +1,6 @@
 # Antique Product Specification (v2)
 
-Last updated: March 5, 2026
+Last updated: March 12, 2026
 Owner: Product + Engineering (Linear team: Antique)
 Source of truth for delivery: Linear issues mapped to this spec
 
@@ -23,15 +23,16 @@ Core principles:
 | Reels feed playback | Done | 2026-03-05 | ANT-26 |
 | Gallery video upload + Mux processing | Done | 2026-03-05 | ANT-26 |
 | Identity + auth (OTP, sessions, role claims) | Done | 2026-03-05 | ANT-28 |
-| `me` profile + role switch + auth route guards | Planned (P1) | 2026-03-05 | ANT-31 |
-| Seller onboarding/approval | Planned (P1) | 2026-03-05 | ANT-32 |
-| Market day session open/close | Planned (P2) | 2026-03-05 | TBD |
-| Listings + price floor + basket + offers | Planned (P2) | 2026-03-05 | TBD |
-| Manual winner selection + auto-decline others | Planned (P2) | 2026-03-05 | TBD |
-| Per-product chat | Planned (P3) | 2026-03-05 | TBD |
-| Sold list + CSV export | Planned (P3) | 2026-03-05 | TBD |
-| Story rings + announcements + notifications | Planned (P4) | 2026-03-05 | TBD |
-| Abuse prevention + moderation + observability | Planned (P4) | 2026-03-05 | TBD |
+| `me` profile + role switch + auth route guards | Done | 2026-03-07 | ANT-31, ANT-50 |
+| Seller onboarding/approval | Done | 2026-03-06 | ANT-32, ANT-48 |
+| Market day session open/close | Done | 2026-03-06 | ANT-33 |
+| Listings + price floor + basket + offers | Done | 2026-03-07 | ANT-34, ANT-35 |
+| Manual winner selection + auto-decline others | Done | 2026-03-06 | ANT-36 |
+| Per-product chat | Done | 2026-03-07 | ANT-37 |
+| Sold list + CSV export | Done | 2026-03-11 | ANT-38 |
+| Story rings + announcements + notifications | Done | 2026-03-12 | ANT-39, ANT-40, ANT-54, ANT-58 |
+| Abuse prevention + moderation + observability | Done | 2026-03-11 | ANT-41, ANT-42 |
+| Fulfillment edge-case workflows | In Progress | 2026-03-12 | ANT-44, ANT-60, ANT-61, ANT-62 |
 
 Status keys:
 - `Done`: implemented and verified
