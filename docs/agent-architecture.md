@@ -72,4 +72,5 @@ This document defines stable backend module boundaries so implementation agents 
 - For new feature work, add/extend domain contracts before wiring routes.
 - Keep contract files focused on capability interfaces and DTO-like input/output types.
 - Add tests for changed contracts at route/service boundaries.
+- Use `docs/testing-structure.md` as the canonical map for API integration suite placement.
 - Update this document only when boundaries/invariants change.
