@@ -433,7 +433,7 @@ export class NotificationService {
   onDealStatusChanged(params: {
     dealId: string;
     actorUserId: string;
-    status: "paid" | "completed" | "canceled";
+    status: "paid" | "cancellation_requested" | "completed" | "canceled" | "refunded";
     requestIp?: string;
   }): void {
     if (params.status !== "paid") {
@@ -460,6 +460,108 @@ export class NotificationService {
       tenantId: context.tenant_id,
       requestIp: params.requestIp,
       metadata: { dealId: params.dealId, listingId: context.listing_id }
+    });
+  }
+
+  onDealCancellationRequested(params: {
+    dealId: string;
+    actorUserId: string;
+    actorRole: "buyer" | "seller" | "admin";
+    reasonCode: string;
+    note?: string;
+    requestIp?: string;
+  }): void {
+    const context = this.getDealNotificationContext(params.dealId);
+    if (!context?.tenant_id) {
+      return;
+    }
+
+    for (const recipient of [context.seller_user_id, context.buyer_user_id]) {
+      if (recipient === params.actorUserId) {
+        continue;
+      }
+      this.createNotification({
+        userId: recipient,
+        tenantId: context.tenant_id,
+        type: "deal_cancellation_requested",
+        title: "Cancellation requested",
+        message: "A seller requested cancellation for an active deal.",
+        metadata: {
+          dealId: params.dealId,
+          listingId: context.listing_id,
+          reasonCode: params.reasonCode
+        }
+      });
+    }
+
+    this.recordAuditEvent({
+      eventType: "deal_cancellation_requested",
+      actorUserId: params.actorUserId,
+      actorRole: params.actorRole,
+      reasonCode: params.reasonCode,
+      requestIp: params.requestIp ?? null,
+      metadata: {
+        dealId: params.dealId,
+        listingId: context.listing_id,
+        priorStatus: context.status,
+        note: params.note ?? null
+      }
+    });
+  }
+
+  onDealCancellationResolved(params: {
+    dealId: string;
+    actorUserId: string;
+    actorRole: "buyer" | "seller" | "admin";
+    resolution: "paid" | "canceled" | "refunded";
+    reasonCode: string;
+    refundConfirmed?: boolean;
+    requestIp?: string;
+  }): void {
+    const context = this.getDealNotificationContext(params.dealId);
+    if (!context?.tenant_id) {
+      return;
+    }
+
+    const notificationType =
+      params.resolution === "refunded" ? "deal_refund_confirmed" : "deal_cancellation_resolved";
+    const title = params.resolution === "refunded" ? "Refund confirmed" : "Cancellation resolved";
+    const message =
+      params.resolution === "refunded"
+        ? "A paid deal cancellation has been resolved with a confirmed refund."
+        : `Deal cancellation request resolved as ${params.resolution}.`;
+
+    for (const recipient of [context.seller_user_id, context.buyer_user_id]) {
+      if (recipient === params.actorUserId) {
+        continue;
+      }
+      this.createNotification({
+        userId: recipient,
+        tenantId: context.tenant_id,
+        type: notificationType,
+        title,
+        message,
+        metadata: {
+          dealId: params.dealId,
+          listingId: context.listing_id,
+          resolution: params.resolution
+        }
+      });
+    }
+
+    this.recordAuditEvent({
+      eventType:
+        params.resolution === "refunded" ? "deal_refund_confirmed" : "deal_cancellation_resolved",
+      actorUserId: params.actorUserId,
+      actorRole: params.actorRole,
+      reasonCode: params.reasonCode,
+      requestIp: params.requestIp ?? null,
+      metadata: {
+        dealId: params.dealId,
+        listingId: context.listing_id,
+        resolution: params.resolution,
+        refundConfirmed: params.refundConfirmed === true
+      }
     });
   }
 
@@ -661,6 +763,72 @@ export class NotificationService {
         params.eventName,
         params.requestIp ?? null,
         JSON.stringify({ tenantId: params.tenantId, ...params.metadata }),
+        this.now()
+      );
+  }
+
+  private getDealNotificationContext(
+    dealId: string
+  ): { listing_id: string; seller_user_id: string; buyer_user_id: string; tenant_id: string | null; status: string } | undefined {
+    return this.sqlite
+      .prepare(
+        `
+          SELECT
+            deals.listing_id,
+            deals.seller_user_id,
+            deals.buyer_user_id,
+            deals.status,
+            listings.tenant_id
+          FROM deals
+          INNER JOIN listings ON listings.id = deals.listing_id
+          WHERE deals.id = ?
+          LIMIT 1
+        `
+      )
+      .get(dealId) as
+      | {
+          listing_id: string;
+          seller_user_id: string;
+          buyer_user_id: string;
+          tenant_id: string | null;
+          status: string;
+        }
+      | undefined;
+  }
+
+  private recordAuditEvent(params: {
+    eventType: string;
+    actorUserId: string;
+    actorRole: "buyer" | "seller" | "admin";
+    reasonCode: string;
+    requestIp: string | null;
+    metadata: Record<string, unknown>;
+  }): void {
+    this.sqlite
+      .prepare(
+        `
+          INSERT INTO audit_events (
+            id,
+            event_type,
+            actor_user_id,
+            actor_role,
+            target_seller_user_id,
+            outcome,
+            reason_code,
+            request_ip,
+            metadata_json,
+            created_at
+          ) VALUES (?, ?, ?, ?, NULL, 'allowed', ?, ?, ?, ?)
+        `
+      )
+      .run(
+        newId(),
+        params.eventType,
+        params.actorUserId,
+        params.actorRole,
+        params.reasonCode,
+        params.requestIp,
+        JSON.stringify(params.metadata),
         this.now()
       );
   }

@@ -310,13 +310,21 @@ export interface CreateOfferResponse {
 export const MIN_OFFER_RULE = (offerAmountCents: number, listedPriceCents: number): boolean =>
   offerAmountCents >= listedPriceCents;
 
-export type DealStatus = "open" | "paid" | "completed" | "canceled";
+export type DealStatus =
+  | "open"
+  | "paid"
+  | "cancellation_requested"
+  | "completed"
+  | "canceled"
+  | "refunded";
 
 export const DEAL_STATUS_TRANSITIONS: Record<DealStatus, readonly DealStatus[]> = {
-  open: ["paid", "canceled"],
-  paid: ["completed", "canceled"],
+  open: ["paid", "cancellation_requested"],
+  paid: ["completed", "refunded"],
+  cancellation_requested: ["paid", "canceled", "refunded"],
   completed: [],
-  canceled: []
+  canceled: [],
+  refunded: []
 };
 
 export const isDealStatusTransitionAllowed = (current: DealStatus, next: DealStatus): boolean =>
@@ -353,9 +361,21 @@ export interface DealsMeResponse {
 
 export interface UpdateDealStatusRequest {
   status: Exclude<DealStatus, "open">;
+  reasonCode?: string;
+  note?: string;
+  refundConfirmed?: boolean;
 }
 
 export interface UpdateDealStatusResponse {
+  deal: Deal;
+}
+
+export interface CancelDealRequest {
+  reasonCode: string;
+  note?: string;
+}
+
+export interface CancelDealResponse {
   deal: Deal;
 }
 
@@ -395,7 +415,16 @@ export interface SendChatMessageResponse {
 
 export interface NotificationItem {
   id: string;
-  type: "offer_submitted" | "offer_accepted" | "offer_declined" | "session_opened" | "session_closed" | "announcement";
+  type:
+    | "offer_submitted"
+    | "offer_accepted"
+    | "offer_declined"
+    | "session_opened"
+    | "session_closed"
+    | "deal_cancellation_requested"
+    | "deal_cancellation_resolved"
+    | "deal_refund_confirmed"
+    | "announcement";
   title: string;
   message: string;
   metadata: Record<string, unknown>;

@@ -1,5 +1,7 @@
 import type {
   AcceptOfferResponse,
+  CancelDealRequest,
+  CancelDealResponse,
   ChatMessagesResponse,
   ChatsResponse,
   CloseMarketSessionResponse,
@@ -403,19 +405,52 @@ export async function registerMarketplaceRoutes(
         );
         const body = assertObjectBody(request.body);
         const status = body.status;
-        if (status !== "paid" && status !== "completed" && status !== "canceled") {
+        if (
+          status !== "paid" &&
+          status !== "cancellation_requested" &&
+          status !== "completed" &&
+          status !== "canceled" &&
+          status !== "refunded"
+        ) {
           throw new AuthError(
             "invalid_request",
-            "status must be one of: paid, completed, canceled",
+            "status must be one of: paid, cancellation_requested, completed, canceled, refunded",
             400
           );
         }
+        const reasonCode = typeof body.reasonCode === "string" ? body.reasonCode.trim() : "";
+        const note = typeof body.note === "string" ? body.note.trim() : undefined;
+        const refundConfirmed = body.refundConfirmed === true;
 
         const deal = deps.dealService.updateDealStatus({
           userId: auth.user.id,
+          userRole: auth.user.activeRole,
           dealId: request.params.id,
-          status
+          status,
+          reasonCode: reasonCode || undefined,
+          refundConfirmed
         });
+        if (status === "cancellation_requested") {
+          deps.notificationService?.onDealCancellationRequested({
+            dealId: request.params.id,
+            actorUserId: auth.user.id,
+            actorRole: auth.user.activeRole,
+            reasonCode: reasonCode || "unspecified",
+            note,
+            requestIp: request.ip
+          });
+        }
+        if (status === "canceled" || status === "paid" || status === "refunded") {
+          deps.notificationService?.onDealCancellationResolved({
+            dealId: request.params.id,
+            actorUserId: auth.user.id,
+            actorRole: auth.user.activeRole,
+            resolution: status,
+            reasonCode: reasonCode || "unspecified",
+            refundConfirmed,
+            requestIp: request.ip
+          });
+        }
         deps.notificationService?.onDealStatusChanged({
           dealId: request.params.id,
           actorUserId: auth.user.id,
@@ -425,6 +460,46 @@ export async function registerMarketplaceRoutes(
         return {
           deal
         };
+      } catch (error) {
+        if (error instanceof AuthError) {
+          return sendAuthError(reply, error);
+        }
+        throw error;
+      }
+    }
+  );
+
+  app.post<{ Params: { id: string }; Body: CancelDealRequest; Reply: CancelDealResponse }>(
+    "/v1/deals/:id/cancel-request",
+    async (request, reply) => {
+      try {
+        const auth = await deps.authService.authenticateFromAuthorizationHeader(
+          getAuthorizationHeader(request)
+        );
+        const body = assertObjectBody(request.body);
+        if (typeof body.reasonCode !== "string" || !body.reasonCode.trim()) {
+          throw new AuthError("invalid_request", "reasonCode is required", 400);
+        }
+        if (body.note !== undefined && typeof body.note !== "string") {
+          throw new AuthError("invalid_request", "note must be a string when provided", 400);
+        }
+
+        const deal = deps.dealService.requestCancellation({
+          userId: auth.user.id,
+          userRole: auth.user.activeRole,
+          dealId: request.params.id
+        });
+
+        deps.notificationService?.onDealCancellationRequested({
+          dealId: request.params.id,
+          actorUserId: auth.user.id,
+          actorRole: auth.user.activeRole,
+          reasonCode: body.reasonCode.trim(),
+          note: typeof body.note === "string" ? body.note.trim() : undefined,
+          requestIp: request.ip
+        });
+
+        return { deal };
       } catch (error) {
         if (error instanceof AuthError) {
           return sendAuthError(reply, error);

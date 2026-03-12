@@ -24,13 +24,16 @@ describe("types", () => {
   });
 
   it("exports canonical deal status transition map", () => {
-    expect(DEAL_STATUS_TRANSITIONS.open).toEqual(["paid", "canceled"]);
+    expect(DEAL_STATUS_TRANSITIONS.open).toEqual(["paid", "cancellation_requested"]);
+    expect(DEAL_STATUS_TRANSITIONS.cancellation_requested).toEqual(["paid", "canceled", "refunded"]);
     expect(DEAL_STATUS_TRANSITIONS.completed).toEqual([]);
   });
 
   it("validates deal status transitions", () => {
     expect(isDealStatusTransitionAllowed("open", "paid")).toBe(true);
+    expect(isDealStatusTransitionAllowed("open", "cancellation_requested")).toBe(true);
     expect(isDealStatusTransitionAllowed("paid", "completed")).toBe(true);
+    expect(isDealStatusTransitionAllowed("paid", "refunded")).toBe(true);
     expect(isDealStatusTransitionAllowed("completed", "paid")).toBe(false);
   });
 });
