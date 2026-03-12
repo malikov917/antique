@@ -305,6 +305,7 @@ Add validation constants:
 1. buyer non-payment timeout,
 2. seller cancellation path,
 3. address correction workflow.
+4. Research spec documented at `docs/fulfillment-edge-case-workflows.md` (ANT-44).
 8. Moderation rules for video and listing content quality.
 
 ## 12) Prioritized Delivery Roadmap
