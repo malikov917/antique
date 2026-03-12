@@ -324,6 +324,8 @@ export function initializeDatabase(sqlite: Database): void {
       id TEXT PRIMARY KEY,
       tenant_id TEXT NOT NULL,
       seller_user_id TEXT NOT NULL,
+      source TEXT NOT NULL DEFAULT 'manual',
+      event_type TEXT,
       title TEXT NOT NULL,
       body TEXT NOT NULL,
       created_at INTEGER NOT NULL,
@@ -610,6 +612,16 @@ export function initializeDatabase(sqlite: Database): void {
     .all() as Array<{ name: string }>;
   if (!chatMessageColumns.some((column) => column.name === "tenant_id")) {
     sqlite.exec("ALTER TABLE chat_messages ADD COLUMN tenant_id TEXT");
+  }
+
+  const announcementColumns = sqlite.prepare("PRAGMA table_info(announcements)").all() as Array<{
+    name: string;
+  }>;
+  if (!announcementColumns.some((column) => column.name === "source")) {
+    sqlite.exec("ALTER TABLE announcements ADD COLUMN source TEXT NOT NULL DEFAULT 'manual'");
+  }
+  if (!announcementColumns.some((column) => column.name === "event_type")) {
+    sqlite.exec("ALTER TABLE announcements ADD COLUMN event_type TEXT");
   }
 
   sqlite.exec(`
