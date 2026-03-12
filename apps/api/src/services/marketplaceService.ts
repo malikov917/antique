@@ -83,6 +83,29 @@ interface DealRow {
   created_at: number;
   updated_at: number;
 }
+
+interface DealParticipantRow extends DealRow {
+  tenant_id: string | null;
+}
+
+interface ChatRow {
+  id: string;
+  deal_id: string;
+  listing_id: string;
+  seller_user_id: string;
+  buyer_user_id: string;
+  tenant_id: string | null;
+  created_at: number;
+  updated_at: number;
+}
+
+interface ChatMessageRow {
+  id: string;
+  chat_id: string;
+  sender_user_id: string;
+  body: string;
+  created_at: number;
+}
 export interface MarketplaceRuntimeConfig {
   offerSubmitPerUserPerHour: number;
   offerDecisionPerSellerPerHour: number;
@@ -137,6 +160,28 @@ function toDeal(row: DealRow): Deal {
     paymentTimeoutReason: row.payment_timeout_reason,
     createdAt: toIso(row.created_at),
     updatedAt: toIso(row.updated_at)
+  };
+}
+
+function toChat(row: ChatRow): Chat {
+  return {
+    id: row.id,
+    dealId: row.deal_id,
+    listingId: row.listing_id,
+    sellerUserId: row.seller_user_id,
+    buyerUserId: row.buyer_user_id,
+    createdAt: toIso(row.created_at),
+    updatedAt: toIso(row.updated_at)
+  };
+}
+
+function toChatMessage(row: ChatMessageRow): ChatMessage {
+  return {
+    id: row.id,
+    chatId: row.chat_id,
+    senderUserId: row.sender_user_id,
+    text: row.body,
+    createdAt: toIso(row.created_at)
   };
 }
 
