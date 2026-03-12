@@ -149,7 +149,13 @@ export interface RejectSellerApplicationResponse {
   application: SellerApplication;
 }
 
-export type SellerSaleFulfillmentStatus = "open" | "paid" | "completed" | "canceled" | "unknown";
+export type SellerSaleFulfillmentStatus =
+  | "open"
+  | "payment_overdue"
+  | "paid"
+  | "completed"
+  | "canceled"
+  | "unknown";
 
 export interface SellerSaleLedgerEntry {
   sellerUserId: string;
@@ -312,6 +318,7 @@ export const MIN_OFFER_RULE = (offerAmountCents: number, listedPriceCents: numbe
 
 export type DealStatus =
   | "open"
+  | "payment_overdue"
   | "paid"
   | "cancellation_requested"
   | "completed"
@@ -319,8 +326,9 @@ export type DealStatus =
   | "refunded";
 
 export const DEAL_STATUS_TRANSITIONS: Record<DealStatus, readonly DealStatus[]> = {
-  open: ["paid", "cancellation_requested"],
-  paid: ["completed", "refunded"],
+  open: ["payment_overdue", "paid", "cancellation_requested"],
+  payment_overdue: ["paid", "cancellation_requested"],
+  paid: ["completed", "cancellation_requested", "refunded"],
   cancellation_requested: ["paid", "canceled", "refunded"],
   completed: [],
   canceled: [],
@@ -337,6 +345,10 @@ export interface Deal {
   sellerUserId: string;
   buyerUserId: string;
   status: DealStatus;
+  paymentDueAt: string;
+  paymentOverdueAt: string | null;
+  paymentExtendedAt: string | null;
+  paymentTimeoutReason: string | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -360,7 +372,7 @@ export interface DealsMeResponse {
 }
 
 export interface UpdateDealStatusRequest {
-  status: Exclude<DealStatus, "open">;
+  status: Exclude<DealStatus, "open" | "payment_overdue">;
   reasonCode?: string;
   note?: string;
   refundConfirmed?: boolean;

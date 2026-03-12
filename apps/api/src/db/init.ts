@@ -309,6 +309,10 @@ export function initializeDatabase(sqlite: Database): void {
       seller_user_id TEXT NOT NULL,
       buyer_user_id TEXT NOT NULL,
       status TEXT NOT NULL,
+      payment_due_at INTEGER,
+      payment_overdue_at INTEGER,
+      payment_extended_at INTEGER,
+      payment_timeout_reason TEXT,
       created_at INTEGER NOT NULL,
       updated_at INTEGER NOT NULL,
       FOREIGN KEY (listing_id) REFERENCES listings(id),
@@ -319,7 +323,6 @@ export function initializeDatabase(sqlite: Database): void {
 
     CREATE INDEX IF NOT EXISTS idx_deals_seller_created_at
       ON deals(seller_user_id, created_at DESC);
-
     CREATE TABLE IF NOT EXISTS announcements (
       id TEXT PRIMARY KEY,
       tenant_id TEXT NOT NULL,
@@ -593,6 +596,30 @@ export function initializeDatabase(sqlite: Database): void {
   if (!offerColumns.some((column) => column.name === "tenant_id")) {
     sqlite.exec("ALTER TABLE offers ADD COLUMN tenant_id TEXT");
   }
+
+  const dealColumns = sqlite.prepare("PRAGMA table_info(deals)").all() as Array<{ name: string }>;
+  if (!dealColumns.some((column) => column.name === "payment_due_at")) {
+    sqlite.exec("ALTER TABLE deals ADD COLUMN payment_due_at INTEGER");
+  }
+  if (!dealColumns.some((column) => column.name === "payment_overdue_at")) {
+    sqlite.exec("ALTER TABLE deals ADD COLUMN payment_overdue_at INTEGER");
+  }
+  if (!dealColumns.some((column) => column.name === "payment_extended_at")) {
+    sqlite.exec("ALTER TABLE deals ADD COLUMN payment_extended_at INTEGER");
+  }
+  if (!dealColumns.some((column) => column.name === "payment_timeout_reason")) {
+    sqlite.exec("ALTER TABLE deals ADD COLUMN payment_timeout_reason TEXT");
+  }
+  sqlite.exec(`
+    CREATE INDEX IF NOT EXISTS idx_deals_status_due_at
+      ON deals(status, payment_due_at)
+  `);
+
+  sqlite.exec(`
+    UPDATE deals
+    SET payment_due_at = created_at + 172800000
+    WHERE payment_due_at IS NULL
+  `);
 
   const sellerSalesColumns = sqlite.prepare("PRAGMA table_info(seller_sales)").all() as Array<{ name: string }>;
   if (!sellerSalesColumns.some((column) => column.name === "pii_purged_at")) {

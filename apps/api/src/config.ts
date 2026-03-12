@@ -23,6 +23,9 @@ export interface ApiConfig {
   authOtpVerifyPerPhoneIpPerHour: number;
   offerSubmitPerUserPerHour: number;
   offerDecisionPerSellerPerHour: number;
+  dealPaymentDueAfterSec: number;
+  paymentOverdueSweepEnabled: boolean;
+  paymentOverdueSweepIntervalSec: number;
   retentionPurgeEnabled: boolean;
   retentionPurgeIntervalSec: number;
 }
@@ -168,6 +171,12 @@ export function loadConfig(): ApiConfig {
     offerDecisionPerSellerPerHour: parseNumberValue(
       process.env.OFFER_DECISION_PER_SELLER_PER_HOUR,
       120
+    ),
+    dealPaymentDueAfterSec: parseNumberValue(process.env.DEAL_PAYMENT_DUE_AFTER_SEC, 48 * 60 * 60),
+    paymentOverdueSweepEnabled: parseBooleanValue(process.env.PAYMENT_OVERDUE_SWEEP_ENABLED, true),
+    paymentOverdueSweepIntervalSec: parseNumberValue(
+      process.env.PAYMENT_OVERDUE_SWEEP_INTERVAL_SEC,
+      60
     ),
     retentionPurgeEnabled: parseBooleanValue(process.env.RETENTION_PURGE_ENABLED, true),
     retentionPurgeIntervalSec: parseNumberValue(process.env.RETENTION_PURGE_INTERVAL_SEC, 60 * 60)
