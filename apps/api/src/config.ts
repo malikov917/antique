@@ -31,6 +31,11 @@ export interface ApiConfig {
 }
 
 let localEnvLoaded = false;
+const DEFAULT_DEMO_PLAYBACK_IDS = [
+  "kF01v9aKFlY63i2GkQKQGDv5Y9PbMGdtQD92j5qJCYWU",
+  "OfjbQ3esQifgboENTs4oDXslCP5sSnst",
+  "sp9WNcgcktsmlvFLKgNm3jjSGRD00RPlq"
+];
 
 function splitCsv(value: string | undefined): string[] {
   return (value ?? "")
@@ -131,6 +136,7 @@ function loadLocalApiEnvFile(): void {
 export function loadConfig(): ApiConfig {
   loadLocalApiEnvFile();
   const apiRoot = findApiRoot();
+  const configuredDemoPlaybackIds = splitCsv(process.env.DEMO_PLAYBACK_IDS);
   return {
     port: Number(process.env.API_PORT ?? 4000),
     dbPath: resolve(process.env.API_DB_PATH ?? join(apiRoot, "data", "antique.sqlite")),
@@ -147,7 +153,8 @@ export function loadConfig(): ApiConfig {
       ["basic", "plus", "premium"] as const,
       "plus"
     ),
-    demoPlaybackIds: splitCsv(process.env.DEMO_PLAYBACK_IDS),
+    demoPlaybackIds:
+      configuredDemoPlaybackIds.length > 0 ? configuredDemoPlaybackIds : DEFAULT_DEMO_PLAYBACK_IDS,
     authJwtSecret: process.env.AUTH_JWT_SECRET ?? "dev-insecure-auth-jwt-secret-change-me",
     authHashSecret: process.env.AUTH_HASH_SECRET ?? "dev-insecure-auth-hash-secret-change-me",
     authAccessTokenTtlSec: parseNumberValue(process.env.AUTH_ACCESS_TOKEN_TTL_SEC, 15 * 60),

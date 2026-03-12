@@ -8,6 +8,7 @@
     "ensure:happy-path": "./scripts/ensure-mobile-happy-path.sh",
     "ensure:happy-path:android": "./scripts/ensure-mobile-happy-path-android.sh",
     "ensure:happy-path:all": "pnpm ensure:happy-path && SKIP_CHECK=1 pnpm ensure:happy-path:android",
+    "ensure:screen-audit:ios": "./scripts/run-ios-role-screen-audit.sh",
     "lint": "pnpm -r lint",
     "typecheck": "pnpm --filter @antique/types exec tsc -b tsconfig.json --force && pnpm --filter @antique/mobile typecheck && tsc -b",
     "test": "pnpm -r test",

@@ -1,0 +1,40 @@
+appId: host.exp.Exponent
+---
+- launchApp
+- openLink: ${EXPO_DEV_URL}
+- runFlow:
+    when:
+      visible: "Continue"
+    commands:
+      - tapOn:
+          point: "92%,16%"
+- assertVisible:
+    id: "tab-feed"
+- assertVisible:
+    id: "reels-screen"
+- takeScreenshot: "guest-feed"
+- tapOn:
+    id: "feed-updates-button"
+- assertVisible:
+    id: "notifications-modal"
+- takeScreenshot: "guest-feed-updates"
+- tapOn:
+    point: "50%,18%"
+- tapOn:
+    id: "tab-inbox"
+- assertVisible:
+    id: "inbox-screen"
+- assertVisible: "Set EXPO_PUBLIC_ACCESS_TOKEN to load inbox timeline."
+- takeScreenshot: "guest-inbox"
+- tapOn:
+    id: "tab-activity"
+- assertVisible:
+    id: "activity-screen"
+- assertVisible: "Set EXPO_PUBLIC_ACCESS_TOKEN to load timeline data."
+- takeScreenshot: "guest-activity"
+- tapOn:
+    id: "tab-profile"
+- assertVisible:
+    id: "profile-screen"
+- assertVisible: "Step 1: Sign in with phone number"
+- takeScreenshot: "guest-profile"
