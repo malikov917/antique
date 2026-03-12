@@ -2,7 +2,6 @@ import { useEffect, useMemo, useState } from "react";
 import type { Chat, ChatMessage, Deal, DealsMeResponse, MeResponse } from "@antique/types";
 
 const API_BASE_URL = process.env.EXPO_PUBLIC_API_BASE_URL ?? "http://localhost:4000";
-const DEV_ACCESS_TOKEN = process.env.EXPO_PUBLIC_ACCESS_TOKEN;
 const POLL_INTERVAL_MS = 12000;
 
 export interface InboxItem {
@@ -20,7 +19,7 @@ export interface InboxTimelineState {
   refresh: () => void;
 }
 
-export function useInboxTimeline(): InboxTimelineState {
+export function useInboxTimeline(accessToken?: string): InboxTimelineState {
   const [items, setItems] = useState<InboxItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -29,9 +28,9 @@ export function useInboxTimeline(): InboxTimelineState {
   useEffect(() => {
     const abortController = new AbortController();
 
-    const headers = DEV_ACCESS_TOKEN
+    const headers = accessToken
       ? {
-          authorization: `Bearer ${DEV_ACCESS_TOKEN}`
+          authorization: `Bearer ${accessToken}`
         }
       : undefined;
 
@@ -126,7 +125,7 @@ export function useInboxTimeline(): InboxTimelineState {
       clearInterval(intervalId);
       abortController.abort();
     };
-  }, [refreshTick]);
+  }, [accessToken, refreshTick]);
 
   return useMemo(
     () => ({

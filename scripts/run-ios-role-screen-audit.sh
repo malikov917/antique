@@ -25,6 +25,7 @@ API_LOG="$RUN_DIR/logs/api.log"
 MOBILE_LOG_DIR="$RUN_DIR/logs/mobile"
 ARTIFACTS_DIR="$RUN_DIR/artifacts"
 TOKENS_FILE="$RUN_DIR/tokens.env"
+LATEST_TOKENS_FILE="$ROOT_DIR/state/seed-users-latest.env"
 SEED_SUMMARY_FILE="$RUN_DIR/seed-summary.md"
 
 mkdir -p "$RUN_DIR/logs" "$MOBILE_LOG_DIR" "$ARTIFACTS_DIR"
@@ -174,11 +175,17 @@ seed_marketplace_data() {
   local seller_user_id="$5"
   local admin_token="$6"
   local admin_user_id="$7"
+  local refreshed_admin_token_and_id
 
   sqlite3 "$DB_PATH" "UPDATE users SET allowed_roles='[\"buyer\",\"seller\",\"admin\"]', active_role='admin' WHERE id='${admin_user_id}';"
+  refreshed_admin_token_and_id="$(request_access_token "$ADMIN_PHONE" "audit-admin-ios-elevated")"
+  admin_token="${refreshed_admin_token_and_id%%|*}"
 
-  api_post_json "$seller_token" "/v1/seller/apply" '{"fullName":"Seller Demo","shopName":"Antique Seller Demo","note":"e2e-seed"}' >/dev/null
-  curl --silent --show-error --fail -X POST "http://127.0.0.1:${API_PORT}/v1/admin/seller-applications/${seller_user_id}/approve" \
+  curl --silent --show-error -X POST "http://127.0.0.1:${API_PORT}/v1/seller/apply" \
+    -H "authorization: Bearer ${seller_token}" \
+    -H 'content-type: application/json' \
+    -d '{"fullName":"Seller Demo","shopName":"Antique Seller Demo","note":"e2e-seed"}' >/dev/null
+  curl --silent --show-error -X POST "http://127.0.0.1:${API_PORT}/v1/admin/seller-applications/${seller_user_id}/approve" \
     -H "authorization: Bearer ${admin_token}" >/dev/null
   api_post_json "$seller_token" "/v1/me/role-switch" '{"role":"seller"}' >/dev/null
 
@@ -242,6 +249,11 @@ seed_marketplace_data() {
 cat > "$SEED_SUMMARY_FILE" <<SUMMARY
 # Seed Summary
 
+- Phones (credentials):
+  - Buyer: ${BUYER_PHONE}
+  - Buyer2: ${BUYER2_PHONE}
+  - Seller: ${SELLER_PHONE}
+  - Admin: ${ADMIN_PHONE}
 - Buyer user: ${buyer_user_id}
 - Buyer2 user: ${BUYER2_USER_ID}
 - Seller user: ${seller_user_id}
@@ -363,6 +375,8 @@ ADMIN_PHONE=${ADMIN_PHONE}
 ADMIN_USER_ID=${ADMIN_USER_ID}
 ADMIN_ACCESS_TOKEN=${ADMIN_TOKEN}
 TOKENS
+
+cp "$TOKENS_FILE" "$LATEST_TOKENS_FILE"
 
 start_mobile "guest" ""
 run_flow "guest" "e2e/maestro/ios-screen-audit-guest.yaml"

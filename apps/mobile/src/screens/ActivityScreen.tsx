@@ -1,5 +1,6 @@
 import { ActivityIndicator, ScrollView, StyleSheet, Text, View } from "react-native";
 import type { NotificationItem } from "@antique/types";
+import { useAuthSession } from "../auth/session";
 import { useNotifications } from "../hooks/useNotifications";
 
 type ActivityEntry =
@@ -52,7 +53,8 @@ function toLabel(type: NotificationItem["type"]): string {
 }
 
 export function ActivityScreen() {
-  const { notifications, announcements, loading, error } = useNotifications();
+  const { accessToken } = useAuthSession();
+  const { notifications, announcements, loading, error } = useNotifications(accessToken);
 
   const entries: ActivityEntry[] = [
     ...notifications.map((item) => ({

@@ -7,7 +7,6 @@ import type {
 } from "@antique/types";
 
 const API_BASE_URL = process.env.EXPO_PUBLIC_API_BASE_URL ?? "http://localhost:4000";
-const DEV_ACCESS_TOKEN = process.env.EXPO_PUBLIC_ACCESS_TOKEN;
 const POLL_INTERVAL_MS = 12000;
 
 export interface NotificationsState {
@@ -17,7 +16,7 @@ export interface NotificationsState {
   error: string | null;
 }
 
-export function useNotifications(): NotificationsState {
+export function useNotifications(accessToken?: string): NotificationsState {
   const [notifications, setNotifications] = useState<NotificationItem[]>([]);
   const [announcements, setAnnouncements] = useState<AnnouncementItem[]>([]);
   const [loading, setLoading] = useState(true);
@@ -26,9 +25,9 @@ export function useNotifications(): NotificationsState {
   useEffect(() => {
     const abortController = new AbortController();
 
-    const headers = DEV_ACCESS_TOKEN
+    const headers = accessToken
       ? {
-          authorization: `Bearer ${DEV_ACCESS_TOKEN}`
+          authorization: `Bearer ${accessToken}`
         }
       : undefined;
 
@@ -80,7 +79,7 @@ export function useNotifications(): NotificationsState {
       clearInterval(intervalId);
       abortController.abort();
     };
-  }, []);
+  }, [accessToken]);
 
   return useMemo(
     () => ({

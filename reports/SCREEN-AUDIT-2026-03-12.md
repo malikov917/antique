@@ -2,14 +2,15 @@
 
 Run target: `origin/main` (`d83240b`) in `/Users/kanstantsinmalikau/.codex/worktrees/57e2/antique-main-audit`
 
-Audit run artifacts:
-- `/Users/kanstantsinmalikau/.codex/worktrees/57e2/antique-main-audit/state/runs/ios-role-screen-audit/20260312-224714/artifacts`
-- `/Users/kanstantsinmalikau/.codex/worktrees/57e2/antique-main-audit/state/runs/ios-role-screen-audit/20260312-224714/logs`
-- Seed summary: `/Users/kanstantsinmalikau/.codex/worktrees/57e2/antique-main-audit/state/runs/ios-role-screen-audit/20260312-224714/seed-summary.md`
+Latest audit run artifacts:
+- `/Users/kanstantsinmalikau/.codex/worktrees/57e2/antique-main-audit/state/runs/ios-role-screen-audit/20260312-231619/artifacts`
+- `/Users/kanstantsinmalikau/.codex/worktrees/57e2/antique-main-audit/state/runs/ios-role-screen-audit/20260312-231619/logs`
+- Seed summary: `/Users/kanstantsinmalikau/.codex/worktrees/57e2/antique-main-audit/state/runs/ios-role-screen-audit/20260312-231619/seed-summary.md`
+- Latest seeded token snapshot: `/Users/kanstantsinmalikau/.codex/worktrees/57e2/antique-main-audit/state/seed-users-latest.env`
 
 ## Dataset seeded (persistent SQLite)
 - 4 users: buyer, buyer2, seller, admin.
-- Seller lifecycle: application submitted + admin approved + switched to seller role.
+- Seller lifecycle: application + admin approval + seller role switch.
 - Marketplace: one market session, three listings.
 - Commerce: three offers (accepted/declined mix), one completed deal.
 - Chat: deal thread with buyer/seller messages.
@@ -18,50 +19,51 @@ Audit run artifacts:
 
 Persistence:
 - Marketplace/auth data is persisted in `apps/api/data/antique.sqlite`.
-- Feed reels are currently seeded via startup demo playback IDs (in-memory), not via marketplace DB entities.
+- Feed reels are still startup demo playback IDs (not DB-backed listing/video entities yet).
 
 ## Role-by-role findings
 
 ### Guest
 Working:
-- Feed tab opens and renders playable demo reel surface.
-- Updates modal opens.
-- Inbox/Activity/Profile tabs are reachable.
+- Guest lands on dedicated auth screen (`/auth`) first.
+- Feed/Inbox/Activity/Profile tabs are blocked until authentication.
+- Login/register copy is explicit and visible.
 
 Missing/weak:
-- Not redirected to dedicated login/register first.
-- Inbox/Activity show token error messages (`Set EXPO_PUBLIC_ACCESS_TOKEN...`) instead of auth-first UX.
+- OTP helper UX is still developer-oriented (reads OTP from API logs).
 
 ### Buyer
 Working:
-- Inbox shows populated deal card (status, active address, correction state, latest message).
-- Activity shows populated event timeline (offer accepted/declined, correction approved, announcements, market close).
-- Profile shows signed-in onboarding state.
+- Feed renders and **does not show Upload button** for buyer role.
+- Inbox shows populated deal card, address state, and latest message.
+- Activity shows seeded operational timeline.
+- Profile is now account-focused (user data, role state, seller application), not mixed with login flow.
 
 Missing/weak:
-- No direct conversation detail screen from inbox card in current tab flow.
-- Profile screen still mixes auth controls and account management in one long page.
+- Inbox still lacks dedicated threaded chat detail screen in current mobile flow.
 
 ### Seller
 Working:
-- Inbox shows populated deal card from seller perspective.
-- Activity shows seller-facing operational events (new offer, correction requested/resolved, cancellation resolution, market close).
-- Profile renders signed-in state.
+- Feed renders and shows Upload button only for seller role.
+- Inbox and Activity reflect seller-side seeded events.
+- Profile seller controls remain available (role + seller application state).
 
 Missing/weak:
-- Same profile overload and discoverability issues.
-- No dedicated seller operations dashboard in mobile tabs (everything funnels through activity list/profile form).
+- Seller operations are still spread across feed/activity/profile; no dedicated seller control center screen yet.
 
-## View quality notes
-1. Feed now visually renders with valid Mux demo IDs (no stream 404 errors in latest run).
-2. Header text overlap is still visible on Inbox/Activity screenshots (`Inbox48`, `Activity48`) and needs safe-area/header treatment cleanup.
-3. The top-right Expo tools floating control still obscures UI during Expo Go walkthroughs (test artifact caveat).
+## Visual quality notes
+1. Button label clarity improved (`Updates` -> `Activity`).
+2. Role-based CTA visibility is now aligned with product expectation (buyer cannot upload).
+3. Safe-area/header polish is still needed for final visual pass on all tabs.
+4. Expo Go tools bubble can still overlap top-right UI in manual/E2E runs.
 
 ## What is truly working now
-- Core backend workflows for auth/seller/onboarding/listings/offers/deals/chats/notifications can be executed end-to-end with seeded data.
-- Mobile tab pages can render that seeded state for buyer/seller.
+- Auth-first navigation and route gating.
+- Role-scoped feed actions (seller-only upload).
+- Persistent seeded beta dataset for repeated E2E/visual checks.
+- Buyer/seller tab surfaces rendering real seeded marketplace/chat/activity data.
 
 ## What is still missing from an E2E product perspective
-- Auth-first app entry flow.
-- Clear route-to-action from inbox summary to full chat thread UI.
-- Feed integration with persistent marketplace listing/video entities instead of startup-only demo reel seed.
+- Feed backed by persistent marketplace listing/video records (instead of startup demo reel seed).
+- Dedicated chat thread detail UX from inbox cards.
+- Final visual finishing pass (safe areas, spacing consistency, control density).
