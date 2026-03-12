@@ -12,8 +12,11 @@ import type {
   DeclineOfferResponse,
   DealsMeResponse,
   CreateOfferResponse,
+  CreateDealAddressCorrectionRequest,
+  CreateDealAddressCorrectionResponse,
   SendChatMessageRequest,
   SendChatMessageResponse,
+  ResolveDealAddressCorrectionResponse,
   UpdateDealStatusRequest,
   UpdateDealStatusResponse,
   OpenMarketSessionResponse,
@@ -500,6 +503,109 @@ export async function registerMarketplaceRoutes(
         });
 
         return { deal };
+      } catch (error) {
+        if (error instanceof AuthError) {
+          return sendAuthError(reply, error);
+        }
+        throw error;
+      }
+    }
+  );
+
+  app.post<{
+    Params: { id: string };
+    Body: CreateDealAddressCorrectionRequest;
+    Reply: CreateDealAddressCorrectionResponse;
+  }>("/v1/deals/:id/address-corrections", async (request, reply) => {
+    try {
+      const auth = await deps.authService.authenticateFromAuthorizationHeader(
+        getAuthorizationHeader(request)
+      );
+      const body = assertObjectBody(request.body);
+      const shippingAddress = typeof body.shippingAddress === "string" ? body.shippingAddress.trim() : "";
+      const reason = typeof body.reason === "string" ? body.reason.trim() : "";
+      if (!shippingAddress) {
+        throw new AuthError("invalid_request", "shippingAddress is required", 400);
+      }
+      if (!reason) {
+        throw new AuthError("invalid_request", "reason is required", 400);
+      }
+
+      const result = deps.dealService.createAddressCorrection({
+        userId: auth.user.id,
+        dealId: request.params.id,
+        shippingAddress,
+        reason,
+        requestIp: request.ip
+      });
+      deps.notificationService?.onDealAddressCorrectionRequested({
+        dealId: request.params.id,
+        correctionId: result.correction.id,
+        actorUserId: auth.user.id,
+        requestIp: request.ip
+      });
+      return result;
+    } catch (error) {
+      if (error instanceof AuthError) {
+        return sendAuthError(reply, error);
+      }
+      throw error;
+    }
+  });
+
+  app.post<{ Params: { id: string; correctionId: string }; Reply: ResolveDealAddressCorrectionResponse }>(
+    "/v1/deals/:id/address-corrections/:correctionId/approve",
+    async (request, reply) => {
+      try {
+        const auth = await deps.authService.authenticateFromAuthorizationHeader(
+          getAuthorizationHeader(request)
+        );
+        const result = deps.dealService.resolveAddressCorrection({
+          actorUserId: auth.user.id,
+          dealId: request.params.id,
+          correctionId: request.params.correctionId,
+          decision: "approve",
+          requestIp: request.ip
+        });
+        deps.notificationService?.onDealAddressCorrectionResolved({
+          dealId: request.params.id,
+          correctionId: request.params.correctionId,
+          actorUserId: auth.user.id,
+          decision: "approve",
+          requestIp: request.ip
+        });
+        return result;
+      } catch (error) {
+        if (error instanceof AuthError) {
+          return sendAuthError(reply, error);
+        }
+        throw error;
+      }
+    }
+  );
+
+  app.post<{ Params: { id: string; correctionId: string }; Reply: ResolveDealAddressCorrectionResponse }>(
+    "/v1/deals/:id/address-corrections/:correctionId/reject",
+    async (request, reply) => {
+      try {
+        const auth = await deps.authService.authenticateFromAuthorizationHeader(
+          getAuthorizationHeader(request)
+        );
+        const result = deps.dealService.resolveAddressCorrection({
+          actorUserId: auth.user.id,
+          dealId: request.params.id,
+          correctionId: request.params.correctionId,
+          decision: "reject",
+          requestIp: request.ip
+        });
+        deps.notificationService?.onDealAddressCorrectionResolved({
+          dealId: request.params.id,
+          correctionId: request.params.correctionId,
+          actorUserId: auth.user.id,
+          decision: "reject",
+          requestIp: request.ip
+        });
+        return result;
       } catch (error) {
         if (error instanceof AuthError) {
           return sendAuthError(reply, error);

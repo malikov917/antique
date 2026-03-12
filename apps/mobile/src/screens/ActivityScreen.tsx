@@ -40,6 +40,14 @@ function toLabel(type: NotificationItem["type"]): string {
       return "Refund confirmed";
     case "announcement":
       return "Announcement";
+    case "deal_address_correction_requested":
+      return "Address update requested";
+    case "deal_address_correction_approved":
+      return "Address update approved";
+    case "deal_address_correction_rejected":
+      return "Address update rejected";
+    default:
+      return "Activity";
   }
 }
 

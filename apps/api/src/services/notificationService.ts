@@ -565,6 +565,82 @@ export class NotificationService {
     });
   }
 
+  onDealAddressCorrectionRequested(params: {
+    dealId: string;
+    correctionId: string;
+    actorUserId: string;
+    requestIp?: string;
+  }): void {
+    const context = this.resolveDealAudience(params.dealId);
+    if (!context) {
+      return;
+    }
+    const recipients = this.resolveDealNotificationRecipients({
+      tenantId: context.tenantId,
+      actorUserId: params.actorUserId,
+      sellerUserId: context.sellerUserId,
+      buyerUserId: context.buyerUserId
+    });
+
+    for (const userId of recipients) {
+      this.createNotification({
+        userId,
+        tenantId: context.tenantId,
+        type: "deal_address_correction_requested",
+        title: "Address correction requested",
+        message: "A deal participant requested a shipping address correction.",
+        metadata: {
+          dealId: params.dealId,
+          correctionId: params.correctionId,
+          actorUserId: params.actorUserId
+        }
+      });
+    }
+  }
+
+  onDealAddressCorrectionResolved(params: {
+    dealId: string;
+    correctionId: string;
+    actorUserId: string;
+    decision: "approve" | "reject";
+    requestIp?: string;
+  }): void {
+    const context = this.resolveDealAudience(params.dealId);
+    if (!context) {
+      return;
+    }
+    const recipients = this.resolveDealNotificationRecipients({
+      tenantId: context.tenantId,
+      actorUserId: params.actorUserId,
+      sellerUserId: context.sellerUserId,
+      buyerUserId: context.buyerUserId
+    });
+
+    for (const userId of recipients) {
+      this.createNotification({
+        userId,
+        tenantId: context.tenantId,
+        type:
+          params.decision === "approve"
+            ? "deal_address_correction_approved"
+            : "deal_address_correction_rejected",
+        title:
+          params.decision === "approve"
+            ? "Address correction approved"
+            : "Address correction rejected",
+        message:
+          params.decision === "approve"
+            ? "A pending shipping address correction was approved."
+            : "A pending shipping address correction was rejected.",
+        metadata: {
+          dealId: params.dealId,
+          correctionId: params.correctionId,
+          actorUserId: params.actorUserId
+        }
+      });
+    }
+  }
+
   private createNotification(params: {
     userId: string;
     tenantId: string;
@@ -610,6 +686,56 @@ export class NotificationService {
       message: params.message,
       metadata: params.metadata
     });
+  }
+
+  private resolveDealAudience(
+    dealId: string
+  ): { tenantId: string; sellerUserId: string; buyerUserId: string } | null {
+    const row = this.sqlite
+      .prepare(
+        `
+          SELECT deals.seller_user_id, deals.buyer_user_id, listings.tenant_id
+          FROM deals
+          INNER JOIN listings ON listings.id = deals.listing_id
+          WHERE deals.id = ?
+          LIMIT 1
+        `
+      )
+      .get(dealId) as
+      | { seller_user_id: string; buyer_user_id: string; tenant_id: string | null }
+      | undefined;
+    if (!row?.tenant_id) {
+      return null;
+    }
+    return {
+      tenantId: row.tenant_id,
+      sellerUserId: row.seller_user_id,
+      buyerUserId: row.buyer_user_id
+    };
+  }
+
+  private resolveDealNotificationRecipients(params: {
+    tenantId: string;
+    actorUserId: string;
+    sellerUserId: string;
+    buyerUserId: string;
+  }): string[] {
+    const recipients = new Set<string>([params.sellerUserId, params.buyerUserId]);
+    const admins = this.sqlite
+      .prepare(
+        `
+          SELECT id
+          FROM users
+          WHERE tenant_id = ?
+            AND active_role = 'admin'
+        `
+      )
+      .all(params.tenantId) as Array<{ id: string }>;
+    for (const admin of admins) {
+      recipients.add(admin.id);
+    }
+    recipients.delete(params.actorUserId);
+    return [...recipients];
   }
 
   private createSystemSessionAnnouncement(params: {

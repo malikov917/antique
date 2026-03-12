@@ -1,7 +1,10 @@
+import { createHash } from "node:crypto";
 import type { Database } from "better-sqlite3";
 import type {
   AuthRole,
   Deal,
+  DealAddressCorrection,
+  DealAddressCorrectionStatus,
   DealStatus,
   ListingStatus,
   MarketSessionStatus,
@@ -40,12 +43,31 @@ interface DealRow {
   payment_overdue_at: number | null;
   payment_extended_at: number | null;
   payment_timeout_reason: string | null;
+  active_shipping_address: string;
+  latest_correction_id: string | null;
+  latest_correction_status: DealAddressCorrectionStatus | null;
+  correction_pending_count: number;
+  correction_last_requested_at: number | null;
   created_at: number;
   updated_at: number;
 }
 
 interface DealParticipantRow extends DealRow {
   tenant_id: string | null;
+  actor_role: "buyer" | "seller" | "admin";
+}
+
+interface DealAddressCorrectionRow {
+  id: string;
+  deal_id: string;
+  requested_by_user_id: string;
+  status: DealAddressCorrectionStatus;
+  reason: string;
+  proposed_shipping_address: string;
+  resolved_by_user_id: string | null;
+  resolved_at: number | null;
+  created_at: number;
+  updated_at: number;
 }
 
 export interface DealDomainRuntimeConfig {
@@ -81,6 +103,31 @@ function toDeal(row: DealRow): Deal {
     paymentOverdueAt: row.payment_overdue_at === null ? null : toIso(row.payment_overdue_at),
     paymentExtendedAt: row.payment_extended_at === null ? null : toIso(row.payment_extended_at),
     paymentTimeoutReason: row.payment_timeout_reason,
+    activeShippingAddress: row.active_shipping_address,
+    addressCorrection:
+      row.latest_correction_id === null || row.latest_correction_status === null
+        ? null
+        : {
+            latestCorrectionId: row.latest_correction_id,
+            latestStatus: row.latest_correction_status,
+            pendingCount: row.correction_pending_count,
+            lastRequestedAt: toIso(row.correction_last_requested_at ?? row.updated_at)
+          },
+    createdAt: toIso(row.created_at),
+    updatedAt: toIso(row.updated_at)
+  };
+}
+
+function toDealAddressCorrection(row: DealAddressCorrectionRow): DealAddressCorrection {
+  return {
+    id: row.id,
+    dealId: row.deal_id,
+    requestedByUserId: row.requested_by_user_id,
+    status: row.status,
+    reason: row.reason,
+    proposedShippingAddress: row.proposed_shipping_address,
+    resolvedByUserId: row.resolved_by_user_id,
+    resolvedAt: row.resolved_at === null ? null : toIso(row.resolved_at),
     createdAt: toIso(row.created_at),
     updatedAt: toIso(row.updated_at)
   };
@@ -287,6 +334,39 @@ export class SqliteDealDomainService implements DealDomainService {
             deals.payment_overdue_at,
             deals.payment_extended_at,
             deals.payment_timeout_reason,
+            (
+              SELECT offers.shipping_address
+              FROM offers
+              WHERE offers.id = deals.accepted_offer_id
+              LIMIT 1
+            ) AS active_shipping_address,
+            (
+              SELECT id
+              FROM deal_address_corrections
+              WHERE deal_id = deals.id
+              ORDER BY created_at DESC, id DESC
+              LIMIT 1
+            ) AS latest_correction_id,
+            (
+              SELECT status
+              FROM deal_address_corrections
+              WHERE deal_id = deals.id
+              ORDER BY created_at DESC, id DESC
+              LIMIT 1
+            ) AS latest_correction_status,
+            (
+              SELECT COUNT(1)
+              FROM deal_address_corrections
+              WHERE deal_id = deals.id
+                AND status = 'pending'
+            ) AS correction_pending_count,
+            (
+              SELECT created_at
+              FROM deal_address_corrections
+              WHERE deal_id = deals.id
+              ORDER BY created_at DESC, id DESC
+              LIMIT 1
+            ) AS correction_last_requested_at,
             deals.created_at,
             deals.updated_at
           FROM deals
@@ -318,7 +398,7 @@ export class SqliteDealDomainService implements DealDomainService {
         nextStatus: DealStatus,
         refundConfirmed: boolean
       ): Deal => {
-        const context = this.getDealParticipantContext(dealId);
+        const context = this.getDealParticipantContext(dealId, userId);
         if (!context) {
           throw new AuthError("deal_not_found", "Deal was not found", 404);
         }
@@ -355,7 +435,7 @@ export class SqliteDealDomainService implements DealDomainService {
   }): Deal {
     const timestamp = this.now();
     const tx = this.sqlite.transaction((userId: string, userRole: AuthRole, dealId: string): Deal => {
-      const context = this.getDealParticipantContext(dealId);
+      const context = this.getDealParticipantContext(dealId, userId);
       if (!context) {
         throw new AuthError("deal_not_found", "Deal was not found", 404);
       }
@@ -408,6 +488,174 @@ export class SqliteDealDomainService implements DealDomainService {
     });
 
     return tx(params.userId, params.userRole, params.dealId);
+  }
+
+  createAddressCorrection(params: {
+    userId: string;
+    dealId: string;
+    shippingAddress: string;
+    reason: string;
+    requestIp?: string;
+  }): { correction: DealAddressCorrection; deal: Deal } {
+    const nowTs = this.now();
+    const tx = this.sqlite.transaction(
+      (userId: string, dealId: string, shippingAddress: string, reason: string): {
+        correction: DealAddressCorrection;
+        deal: Deal;
+      } => {
+        const context = this.getDealParticipantContext(dealId, userId);
+        if (!context) {
+          throw new AuthError("deal_not_found", "Deal was not found", 404);
+        }
+        this.assertUserCanAccessDeal(context, userId, context.actor_role);
+        this.assertDealAllowsAddressCorrection(context.status);
+
+        const correctionId = newId();
+        this.sqlite
+          .prepare(
+            `
+              INSERT INTO deal_address_corrections (
+                id,
+                deal_id,
+                tenant_id,
+                requested_by_user_id,
+                status,
+                reason,
+                proposed_shipping_address,
+                proposed_shipping_address_purged_at,
+                resolved_by_user_id,
+                resolved_at,
+                created_at,
+                updated_at
+              ) VALUES (?, ?, ?, ?, 'pending', ?, ?, NULL, NULL, NULL, ?, ?)
+            `
+          )
+          .run(
+            correctionId,
+            dealId,
+            this.resolveUserTenantId(userId),
+            userId,
+            reason,
+            shippingAddress,
+            nowTs,
+            nowTs
+          );
+
+        const correction = this.getAddressCorrectionById(correctionId);
+        const deal = this.getDealById(dealId);
+        if (!correction || !deal) {
+          throw new AuthError("deal_not_found", "Deal was not found", 404);
+        }
+        return {
+          correction: toDealAddressCorrection(correction),
+          deal: toDeal(deal)
+        };
+      }
+    );
+
+    const result = tx(params.userId, params.dealId, params.shippingAddress, params.reason);
+    this.recordAuditEvent({
+      actorUserId: params.userId,
+      actorRole: this.resolveUserRole(params.userId),
+      reasonCode: "deal_address_correction_requested",
+      requestIp: params.requestIp ?? null,
+      metadata: {
+        dealId: params.dealId,
+        correctionId: result.correction.id,
+        shippingAddressHash: this.hashPII(params.shippingAddress)
+      }
+    });
+    return result;
+  }
+
+  resolveAddressCorrection(params: {
+    actorUserId: string;
+    dealId: string;
+    correctionId: string;
+    decision: "approve" | "reject";
+    requestIp?: string;
+  }): { correction: DealAddressCorrection; deal: Deal } {
+    const nowTs = this.now();
+    const tx = this.sqlite.transaction(
+      (
+        actorUserId: string,
+        dealId: string,
+        correctionId: string,
+        decision: "approve" | "reject"
+      ): { correction: DealAddressCorrection; deal: Deal } => {
+        const context = this.getDealParticipantContext(dealId, actorUserId);
+        if (!context) {
+          throw new AuthError("deal_not_found", "Deal was not found", 404);
+        }
+        this.assertCanResolveAddressCorrection(context, actorUserId);
+        this.assertDealAllowsAddressCorrection(context.status);
+
+        const correction = this.getAddressCorrectionById(correctionId);
+        if (!correction || correction.deal_id !== dealId) {
+          throw new AuthError("deal_address_correction_not_found", "Address correction was not found", 404);
+        }
+        if (correction.status !== "pending") {
+          return {
+            correction: toDealAddressCorrection(correction),
+            deal: toDeal(context)
+          };
+        }
+
+        const nextStatus: DealAddressCorrectionStatus = decision === "approve" ? "approved" : "rejected";
+        this.sqlite
+          .prepare(
+            `
+              UPDATE deal_address_corrections
+              SET status = ?,
+                  resolved_by_user_id = ?,
+                  resolved_at = ?,
+                  updated_at = ?
+              WHERE id = ?
+            `
+          )
+          .run(nextStatus, actorUserId, nowTs, nowTs, correctionId);
+
+        if (decision === "approve") {
+          this.sqlite
+            .prepare(
+              `
+                UPDATE offers
+                SET shipping_address = ?
+                WHERE id = ?
+              `
+            )
+            .run(correction.proposed_shipping_address, context.accepted_offer_id);
+        }
+
+        const updatedCorrection = this.getAddressCorrectionById(correctionId);
+        const updatedDeal = this.getDealById(dealId);
+        if (!updatedCorrection || !updatedDeal) {
+          throw new AuthError("deal_not_found", "Deal was not found", 404);
+        }
+        return {
+          correction: toDealAddressCorrection(updatedCorrection),
+          deal: toDeal(updatedDeal)
+        };
+      }
+    );
+
+    const result = tx(params.actorUserId, params.dealId, params.correctionId, params.decision);
+    this.recordAuditEvent({
+      actorUserId: params.actorUserId,
+      actorRole: this.resolveUserRole(params.actorUserId),
+      reasonCode:
+        params.decision === "approve"
+          ? "deal_address_correction_approved"
+          : "deal_address_correction_rejected",
+      requestIp: params.requestIp ?? null,
+      metadata: {
+        dealId: params.dealId,
+        correctionId: result.correction.id,
+        status: result.correction.status
+      }
+    });
+
+    return result;
   }
 
   private assertListingOwnedBySeller(listingId: string, sellerUserId: string): void {
@@ -470,6 +718,39 @@ export class SqliteDealDomainService implements DealDomainService {
             payment_overdue_at,
             payment_extended_at,
             payment_timeout_reason,
+            (
+              SELECT offers.shipping_address
+              FROM offers
+              WHERE offers.id = deals.accepted_offer_id
+              LIMIT 1
+            ) AS active_shipping_address,
+            (
+              SELECT id
+              FROM deal_address_corrections
+              WHERE deal_id = deals.id
+              ORDER BY created_at DESC, id DESC
+              LIMIT 1
+            ) AS latest_correction_id,
+            (
+              SELECT status
+              FROM deal_address_corrections
+              WHERE deal_id = deals.id
+              ORDER BY created_at DESC, id DESC
+              LIMIT 1
+            ) AS latest_correction_status,
+            (
+              SELECT COUNT(1)
+              FROM deal_address_corrections
+              WHERE deal_id = deals.id
+                AND status = 'pending'
+            ) AS correction_pending_count,
+            (
+              SELECT created_at
+              FROM deal_address_corrections
+              WHERE deal_id = deals.id
+              ORDER BY created_at DESC, id DESC
+              LIMIT 1
+            ) AS correction_last_requested_at,
             created_at,
             updated_at
           FROM deals
@@ -495,6 +776,39 @@ export class SqliteDealDomainService implements DealDomainService {
             payment_overdue_at,
             payment_extended_at,
             payment_timeout_reason,
+            (
+              SELECT offers.shipping_address
+              FROM offers
+              WHERE offers.id = deals.accepted_offer_id
+              LIMIT 1
+            ) AS active_shipping_address,
+            (
+              SELECT id
+              FROM deal_address_corrections
+              WHERE deal_id = deals.id
+              ORDER BY created_at DESC, id DESC
+              LIMIT 1
+            ) AS latest_correction_id,
+            (
+              SELECT status
+              FROM deal_address_corrections
+              WHERE deal_id = deals.id
+              ORDER BY created_at DESC, id DESC
+              LIMIT 1
+            ) AS latest_correction_status,
+            (
+              SELECT COUNT(1)
+              FROM deal_address_corrections
+              WHERE deal_id = deals.id
+                AND status = 'pending'
+            ) AS correction_pending_count,
+            (
+              SELECT created_at
+              FROM deal_address_corrections
+              WHERE deal_id = deals.id
+              ORDER BY created_at DESC, id DESC
+              LIMIT 1
+            ) AS correction_last_requested_at,
             created_at,
             updated_at
           FROM deals
@@ -569,6 +883,39 @@ export class SqliteDealDomainService implements DealDomainService {
             payment_overdue_at,
             payment_extended_at,
             payment_timeout_reason,
+            (
+              SELECT offers.shipping_address
+              FROM offers
+              WHERE offers.id = deals.accepted_offer_id
+              LIMIT 1
+            ) AS active_shipping_address,
+            (
+              SELECT id
+              FROM deal_address_corrections
+              WHERE deal_id = deals.id
+              ORDER BY created_at DESC, id DESC
+              LIMIT 1
+            ) AS latest_correction_id,
+            (
+              SELECT status
+              FROM deal_address_corrections
+              WHERE deal_id = deals.id
+              ORDER BY created_at DESC, id DESC
+              LIMIT 1
+            ) AS latest_correction_status,
+            (
+              SELECT COUNT(1)
+              FROM deal_address_corrections
+              WHERE deal_id = deals.id
+                AND status = 'pending'
+            ) AS correction_pending_count,
+            (
+              SELECT created_at
+              FROM deal_address_corrections
+              WHERE deal_id = deals.id
+              ORDER BY created_at DESC, id DESC
+              LIMIT 1
+            ) AS correction_last_requested_at,
             created_at,
             updated_at
           FROM deals
@@ -606,7 +953,7 @@ export class SqliteDealDomainService implements DealDomainService {
       .run(newId(), deal.id, listingId, deal.sellerUserId, deal.buyerUserId, tenantId, timestamp, timestamp);
   }
 
-  private getDealParticipantContext(dealId: string): DealParticipantRow | undefined {
+  private getDealParticipantContext(dealId: string, userId: string): DealParticipantRow | undefined {
     return this.sqlite
       .prepare(
         `
@@ -621,16 +968,51 @@ export class SqliteDealDomainService implements DealDomainService {
             deals.payment_overdue_at,
             deals.payment_extended_at,
             deals.payment_timeout_reason,
+            (
+              SELECT offers.shipping_address
+              FROM offers
+              WHERE offers.id = deals.accepted_offer_id
+              LIMIT 1
+            ) AS active_shipping_address,
+            (
+              SELECT id
+              FROM deal_address_corrections
+              WHERE deal_id = deals.id
+              ORDER BY created_at DESC, id DESC
+              LIMIT 1
+            ) AS latest_correction_id,
+            (
+              SELECT status
+              FROM deal_address_corrections
+              WHERE deal_id = deals.id
+              ORDER BY created_at DESC, id DESC
+              LIMIT 1
+            ) AS latest_correction_status,
+            (
+              SELECT COUNT(1)
+              FROM deal_address_corrections
+              WHERE deal_id = deals.id
+                AND status = 'pending'
+            ) AS correction_pending_count,
+            (
+              SELECT created_at
+              FROM deal_address_corrections
+              WHERE deal_id = deals.id
+              ORDER BY created_at DESC, id DESC
+              LIMIT 1
+            ) AS correction_last_requested_at,
             deals.created_at,
             deals.updated_at,
-            listings.tenant_id
+            listings.tenant_id,
+            users.active_role AS actor_role
           FROM deals
           INNER JOIN listings ON listings.id = deals.listing_id
+          INNER JOIN users ON users.id = ?
           WHERE deals.id = ?
           LIMIT 1
         `
       )
-      .get(dealId) as DealParticipantRow | undefined;
+      .get(userId, dealId) as DealParticipantRow | undefined;
   }
 
   private assertUserCanAccessDeal(deal: DealParticipantRow, userId: string, userRole: AuthRole): void {
@@ -748,6 +1130,63 @@ export class SqliteDealDomainService implements DealDomainService {
 
   private resolveInitialPaymentDueAt(createdAtMs: number): number {
     return createdAtMs + Math.max(1, this.runtimeConfig.dealPaymentDueAfterMs);
+  }
+
+  private assertDealAllowsAddressCorrection(status: DealStatus): void {
+    if (status !== "open" && status !== "paid") {
+      throw new AuthError(
+        "deal_address_correction_not_allowed",
+        "Address correction is only allowed while deal is open or paid",
+        409
+      );
+    }
+  }
+
+  private assertCanResolveAddressCorrection(deal: DealParticipantRow, actorUserId: string): void {
+    const actorRole = this.resolveUserRole(actorUserId);
+    if (actorRole === "admin") {
+      this.assertTenantScopeForActor(deal, actorUserId);
+      return;
+    }
+    if (deal.seller_user_id !== actorUserId) {
+      throw new AuthError(
+        "deal_address_correction_resolution_forbidden",
+        "Only seller or admin can resolve address correction requests",
+        403
+      );
+    }
+    this.assertTenantScopeForActor(deal, actorUserId);
+  }
+
+  private assertTenantScopeForActor(deal: DealParticipantRow, actorUserId: string): void {
+    const actorTenantId = this.resolveUserTenantId(actorUserId);
+    if (!deal.tenant_id) {
+      throw new AuthError("forbidden_tenant_scope", "Deal tenant could not be resolved", 403);
+    }
+    requireTenantScope(deal.tenant_id, actorTenantId);
+  }
+
+  private getAddressCorrectionById(correctionId: string): DealAddressCorrectionRow | undefined {
+    return this.sqlite
+      .prepare(
+        `
+          SELECT
+            id,
+            deal_id,
+            requested_by_user_id,
+            status,
+            reason,
+            proposed_shipping_address,
+            resolved_by_user_id,
+            resolved_at,
+            created_at,
+            updated_at
+          FROM deal_address_corrections
+          WHERE id = ?
+          LIMIT 1
+        `
+      )
+      .get(correctionId) as DealAddressCorrectionRow | undefined;
   }
 
   private resolveListingTenantId(listingId: string): string {
@@ -885,5 +1324,54 @@ export class SqliteDealDomainService implements DealDomainService {
       throw new AuthError("forbidden_tenant_scope", "User tenant could not be resolved", 403);
     }
     return row.tenant_id;
+  }
+
+  private resolveUserRole(userId: string): "buyer" | "seller" | "admin" {
+    const row = this.sqlite
+      .prepare("SELECT active_role FROM users WHERE id = ? LIMIT 1")
+      .get(userId) as { active_role: "buyer" | "seller" | "admin" } | undefined;
+    return row?.active_role ?? "buyer";
+  }
+
+  private hashPII(value: string): string {
+    return createHash("sha256").update(value).digest("hex");
+  }
+
+  private recordAuditEvent(params: {
+    actorUserId: string;
+    actorRole: "buyer" | "seller" | "admin";
+    reasonCode:
+      | "deal_address_correction_requested"
+      | "deal_address_correction_approved"
+      | "deal_address_correction_rejected";
+    requestIp: string | null;
+    metadata: Record<string, unknown>;
+  }): void {
+    this.sqlite
+      .prepare(
+        `
+          INSERT INTO audit_events (
+            id,
+            event_type,
+            actor_user_id,
+            actor_role,
+            target_seller_user_id,
+            outcome,
+            reason_code,
+            request_ip,
+            metadata_json,
+            created_at
+          ) VALUES (?, 'deal_address_correction', ?, ?, NULL, 'allowed', ?, ?, ?, ?)
+        `
+      )
+      .run(
+        newId(),
+        params.actorUserId,
+        params.actorRole,
+        params.reasonCode,
+        params.requestIp,
+        JSON.stringify(params.metadata),
+        this.now()
+      );
   }
 }

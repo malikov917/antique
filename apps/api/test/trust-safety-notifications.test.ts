@@ -633,4 +633,127 @@ describe("trust safety notifications api", () => {
 
     await app.close();
   });
+
+  it("creates participant notifications for address correction request and resolution", async () => {
+    const smsProvider = new TestSmsProvider();
+    const dbClient = createDatabaseClient(":memory:");
+    const app = await buildServer({
+      config: buildTestConfig(),
+      smsProvider,
+      muxClient: buildMockMuxClient(),
+      dbClient
+    });
+
+    const seller = await createAuthenticatedSeller(app, smsProvider, dbClient, "+14155550171");
+    const buyer = await createAuthenticatedSession(
+      app,
+      smsProvider,
+      "+14155550172",
+      "ios-device-address-correction-buyer"
+    );
+
+    const openSession = await app.inject({
+      method: "POST",
+      url: "/v1/seller/sessions/open",
+      headers: {
+        authorization: `Bearer ${seller.accessToken}`
+      }
+    });
+    expect(openSession.statusCode).toBe(200);
+
+    const listingResponse = await app.inject({
+      method: "POST",
+      url: "/v1/listings",
+      headers: {
+        authorization: `Bearer ${seller.accessToken}`
+      },
+      payload: {
+        title: "Notification test listing",
+        listedPriceCents: 12000
+      }
+    });
+    expect(listingResponse.statusCode).toBe(200);
+    const listingId = listingResponse.json().listing.id as string;
+
+    const offerResponse = await app.inject({
+      method: "POST",
+      url: `/v1/listings/${listingId}/offers`,
+      headers: {
+        authorization: `Bearer ${buyer.accessToken}`
+      },
+      payload: {
+        amountCents: 13000,
+        shippingAddress: "Initial address"
+      }
+    });
+    expect(offerResponse.statusCode).toBe(200);
+    const offerId = offerResponse.json().offer.id as string;
+
+    const acceptResponse = await app.inject({
+      method: "POST",
+      url: `/v1/offers/${offerId}/accept`,
+      headers: {
+        authorization: `Bearer ${seller.accessToken}`
+      }
+    });
+    expect(acceptResponse.statusCode).toBe(200);
+    const dealId = acceptResponse.json().deal.id as string;
+
+    const requestResponse = await app.inject({
+      method: "POST",
+      url: `/v1/deals/${dealId}/address-corrections`,
+      headers: {
+        authorization: `Bearer ${buyer.accessToken}`
+      },
+      payload: {
+        shippingAddress: "Updated shipping address",
+        reason: "Address typo"
+      }
+    });
+    expect(requestResponse.statusCode).toBe(200);
+    const correctionId = requestResponse.json().correction.id as string;
+
+    const approveResponse = await app.inject({
+      method: "POST",
+      url: `/v1/deals/${dealId}/address-corrections/${correctionId}/approve`,
+      headers: {
+        authorization: `Bearer ${seller.accessToken}`
+      }
+    });
+    expect(approveResponse.statusCode).toBe(200);
+
+    const sellerNotifications = await app.inject({
+      method: "GET",
+      url: "/v1/notifications",
+      headers: {
+        authorization: `Bearer ${seller.accessToken}`
+      }
+    });
+    expect(sellerNotifications.statusCode).toBe(200);
+    expect(sellerNotifications.json().notifications).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          type: "deal_address_correction_requested"
+        })
+      ])
+    );
+
+    const buyerNotifications = await app.inject({
+      method: "GET",
+      url: "/v1/notifications",
+      headers: {
+        authorization: `Bearer ${buyer.accessToken}`
+      }
+    });
+    expect(buyerNotifications.statusCode).toBe(200);
+    expect(buyerNotifications.json().notifications).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          type: "deal_address_correction_approved"
+        })
+      ])
+    );
+
+    await app.close();
+  });
 });

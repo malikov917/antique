@@ -17,12 +17,14 @@ export interface InboxTimelineState {
   items: InboxItem[];
   loading: boolean;
   error: string | null;
+  refresh: () => void;
 }
 
 export function useInboxTimeline(): InboxTimelineState {
   const [items, setItems] = useState<InboxItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [refreshTick, setRefreshTick] = useState(0);
 
   useEffect(() => {
     const abortController = new AbortController();
@@ -124,13 +126,14 @@ export function useInboxTimeline(): InboxTimelineState {
       clearInterval(intervalId);
       abortController.abort();
     };
-  }, []);
+  }, [refreshTick]);
 
   return useMemo(
     () => ({
       items,
       loading,
-      error
+      error,
+      refresh: () => setRefreshTick((value) => value + 1)
     }),
     [error, items, loading]
   );

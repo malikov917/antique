@@ -349,8 +349,32 @@ export interface Deal {
   paymentOverdueAt: string | null;
   paymentExtendedAt: string | null;
   paymentTimeoutReason: string | null;
+  activeShippingAddress: string;
+  addressCorrection: DealAddressCorrectionSummary | null;
   createdAt: string;
   updatedAt: string;
+}
+
+export type DealAddressCorrectionStatus = "pending" | "approved" | "rejected";
+
+export interface DealAddressCorrection {
+  id: string;
+  dealId: string;
+  requestedByUserId: string;
+  status: DealAddressCorrectionStatus;
+  reason: string;
+  proposedShippingAddress: string;
+  resolvedByUserId: string | null;
+  resolvedAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface DealAddressCorrectionSummary {
+  latestCorrectionId: string;
+  latestStatus: DealAddressCorrectionStatus;
+  pendingCount: number;
+  lastRequestedAt: string;
 }
 
 export interface SellerListingOffersResponse {
@@ -388,6 +412,21 @@ export interface CancelDealRequest {
 }
 
 export interface CancelDealResponse {
+  deal: Deal;
+}
+
+export interface CreateDealAddressCorrectionRequest {
+  shippingAddress: string;
+  reason: string;
+}
+
+export interface CreateDealAddressCorrectionResponse {
+  correction: DealAddressCorrection;
+  deal: Deal;
+}
+
+export interface ResolveDealAddressCorrectionResponse {
+  correction: DealAddressCorrection;
   deal: Deal;
 }
 
@@ -436,7 +475,10 @@ export interface NotificationItem {
     | "deal_cancellation_requested"
     | "deal_cancellation_resolved"
     | "deal_refund_confirmed"
-    | "announcement";
+    | "announcement"
+    | "deal_address_correction_requested"
+    | "deal_address_correction_approved"
+    | "deal_address_correction_rejected";
   title: string;
   message: string;
   metadata: Record<string, unknown>;
