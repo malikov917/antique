@@ -32,7 +32,7 @@ Core principles:
 | Sold list + CSV export | Done | 2026-03-11 | ANT-38 |
 | Story rings + announcements + notifications | Done | 2026-03-12 | ANT-39, ANT-40, ANT-54, ANT-58 |
 | Abuse prevention + moderation + observability | Done | 2026-03-11 | ANT-41, ANT-42 |
-| Fulfillment edge-case workflows | In Progress | 2026-03-12 | ANT-44, ANT-60, ANT-61, ANT-62 |
+| Fulfillment edge-case workflows | Done | 2026-03-12 | ANT-44, ANT-60, ANT-61, ANT-62 |
 
 Status keys:
 - `Done`: implemented and verified
@@ -42,27 +42,20 @@ Status keys:
 ## 3) Current State (Repo Reality)
 
 Implemented today:
-1. Reels feed UI with vertical playback in mobile app.
-2. Upload video from gallery.
-3. API direct upload lifecycle with Mux webhook readiness.
-4. Shared type package (`packages/types`).
-5. Phone OTP auth endpoints:
-1. `POST /v1/auth/otp/request`,
-2. `POST /v1/auth/otp/verify`,
-3. `POST /v1/auth/refresh`,
-4. `POST /v1/auth/logout`.
-6. Access/refresh token session lifecycle with rotation, revoke, and reuse detection.
-7. SQLite-backed auth persistence for users, OTP challenges, sessions, and refresh tokens.
+1. Reels-first mobile experience with Feed/Inbox/Activity/Profile tabs, story rings, announcement cards, and freshness badges.
+2. Gallery upload with preparation fallback and API direct-upload lifecycle (`POST /v1/uploads`, `GET /v1/uploads/:uploadId`) plus Mux webhook readiness.
+3. Identity foundation: OTP request/verify, refresh/logout, `GET/PATCH /v1/me`, `POST /v1/me/role-switch`, route guards, role claims, and session persistence.
+4. Seller onboarding lifecycle: `GET /v1/seller/application`, `POST /v1/seller/apply`, admin approve/reject transitions, and audit logging.
+5. Market session and listing operations: open/close day session, listing create/update, basket submit, offers submit/accept/decline, single-winner enforcement, and day-close protections.
+6. Deal and fulfillment lifecycle: deals timeline/status transitions, cancellation request + refund resolution, non-payment timeout sweep, and address-correction request/approve/reject workflow.
+7. Chat and inbox operations: per-deal chat listing, message history, and message posting with participant authorization.
+8. Notifications and announcements: in-app timeline, push-token registration, seller/admin announcements, and automated market day open/close announcements.
+9. Trust, safety, and observability: block/report actions, seller suspension, listing moderation flags, and admin observability summary endpoint.
+10. Seller operations: sales ledger API + CSV export with tenant-aware authorization and export auditing.
+11. SQLite persistence for marketplace entities (sessions, listings, basket, offers, deals, chats, notifications, announcements, sales, audit events) with tenant-scoped guards.
 
-Not implemented yet:
-1. `GET /v1/me`, `PATCH /v1/me`, and `POST /v1/me/role-switch`.
-2. Auth route guards for marketplace endpoints.
-3. Seller onboarding and approval.
-4. Listings metadata and minimum offer logic.
-5. Basket, offers, deal lifecycle, chats.
-6. Notification center and push notifications.
-7. Sold ledger and CSV export.
-8. Full app persistence outside auth domain (listings, offers, chats, notifications).
+Remaining gaps:
+1. No active MVP behavior gap is currently tracked as unimplemented in this spec; follow-on enhancements should be added as new Linear tickets before implementation.
 
 ## 4) Personas and Roles
 
@@ -139,7 +132,7 @@ Rules:
 6. `Listing` (`live`, `day_closed`, `sold`, `withdrawn`)
 7. `BasketItem`
 8. `Offer` (`submitted`, `accepted`, `declined`, `cancelled`, `expired`)
-9. `Deal` (`approved`, `awaiting_payment`, `paid`, `shipped`, `completed`, `cancelled`)
+9. `Deal` (`approved`, `awaiting_payment`, `payment_overdue`, `paid`, `shipped`, `completed`, `cancellation_requested`, `cancelled`, `refunded`)
 10. `ChatThread` (per accepted listing)
 11. `Message`
 12. `Announcement`
