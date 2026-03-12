@@ -8,7 +8,8 @@ Build and ship a fast, agent-driven mobile marketplace for antique video reels o
 2. Every implementation change maps to a Linear issue before code starts.
 3. Branch format is `codex/<issue-key>-<short-slug>`.
 4. Every PR must reference its Linear issue and include the acceptance checklist.
-5. Only move issue state to `In Review` after local validation passes.
+5. Move issue state to `In Review` after local validation passes.
+6. When ticket is relatively simple move ticket into `Merge&Ship` after finished.
 
 ## Required Validation Before `In Review`
 Run from repository root:
@@ -34,7 +35,7 @@ Attach output summary in the Linear issue comment.
 - If upload endpoints return `503` locally, verify Mux credentials are loaded from `apps/api/.env` or repository root `.env` before retrying.
 
 ## Continuous Improvement Rule
-- After each ticket, keep only 1-3 durable lessons in this file (remove stale/redundant ones).
+- After each finished task/job/automation, keep only 1-3 durable lessons in this file (remove stale/redundant ones).
 - Prefer workflow-level learnings (tooling, validation, reproducibility) over one-off incident details.
 
 ## Skill-First Policy
@@ -58,5 +59,4 @@ Attach output summary in the Linear issue comment.
 ## Engineering Defaults
 - Keep API backward-compatible for `/v1/*` unless issue explicitly allows breaking changes.
 - Prefer typed interfaces in `packages/types`.
-- Keep MVP intentionally simple: no DB/auth until explicitly planned.
 - Track performance-sensitive work with the `perf` label.
