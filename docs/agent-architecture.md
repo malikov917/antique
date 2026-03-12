@@ -2,7 +2,7 @@
 
 Owner: Backend/Infra  
 Related ticket: ANT-45  
-Last updated: 2026-03-06
+Last updated: 2026-03-12
 
 ## Purpose
 
@@ -35,10 +35,12 @@ This document defines stable backend module boundaries so implementation agents 
   - Owns seller application workflow and seller sales export authorization.
   - Route layer depends on domain interfaces, not concrete DB service classes.
 - Marketplace module:
-  - Owns market session open/close and buyer basket/offer mutations.
+  - Owns market session open/close, listing mutations, deal lifecycle, and chat reads/writes.
   - Route layer depends on explicit contracts split by concerns:
     - `MarketSessionDomainService`
     - `ListingMutationDomainService`
+    - `DealDomainService`
+    - `ChatDomainService`
 
 ## Current Domain Contracts
 
@@ -48,9 +50,13 @@ This document defines stable backend module boundaries so implementation agents 
 - Marketplace:
   - `MarketSessionDomainService`
   - `ListingMutationDomainService`
-- Planned placeholders for upcoming extractions:
   - `DealDomainService`
   - `ChatDomainService`
+- Marketplace service implementations:
+  - `MarketplaceService`: sessions, listing CRUD, basket, offer submit.
+  - `SqliteDealDomainService`: seller offer decisions, deal reads/status updates.
+  - `SqliteChatDomainService`: chat list/read/write for deal participants.
+- Planned placeholder for upcoming extraction:
   - `NotificationDomainService`
 
 ## Invariants

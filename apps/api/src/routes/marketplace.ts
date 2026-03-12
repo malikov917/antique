@@ -24,6 +24,8 @@ import { AuthError } from "../auth/errors.js";
 import { requireBuyerRole, requireSellerRole } from "../auth/guards.js";
 import { type AuthService } from "../services/authService.js";
 import type {
+  ChatDomainService,
+  DealDomainService,
   ListingMutationDomainService,
   MarketSessionDomainService
 } from "../domain/marketplace/contracts.js";
@@ -33,6 +35,8 @@ interface MarketplaceRouteDeps {
   authService: AuthService;
   marketSessionService: MarketSessionDomainService;
   listingMutationService: ListingMutationDomainService;
+  dealService: DealDomainService;
+  chatService: ChatDomainService;
   notificationService?: NotificationService;
 }
 
@@ -295,7 +299,7 @@ export async function registerMarketplaceRoutes(
         requireSellerRole(auth.user);
 
         return {
-          offers: deps.listingMutationService.listSellerListingOffers({
+          offers: deps.dealService.listSellerListingOffers({
             sellerUserId: auth.user.id,
             listingId: request.params.id
           })
@@ -318,7 +322,7 @@ export async function registerMarketplaceRoutes(
         );
         requireSellerRole(auth.user);
 
-        const result = deps.listingMutationService.acceptOffer({
+        const result = deps.dealService.acceptOffer({
           sellerUserId: auth.user.id,
           offerId: request.params.id,
           requestIp: request.ip
@@ -348,7 +352,7 @@ export async function registerMarketplaceRoutes(
         );
         requireSellerRole(auth.user);
 
-        const offer = deps.listingMutationService.declineOffer({
+        const offer = deps.dealService.declineOffer({
           sellerUserId: auth.user.id,
           offerId: request.params.id,
           requestIp: request.ip
@@ -377,8 +381,8 @@ export async function registerMarketplaceRoutes(
         getAuthorizationHeader(request)
       );
 
-      return {
-        deals: deps.listingMutationService.listDealsForUser({
+        return {
+        deals: deps.dealService.listDealsForUser({
           userId: auth.user.id
         })
       };
@@ -407,7 +411,7 @@ export async function registerMarketplaceRoutes(
           );
         }
 
-        const deal = deps.listingMutationService.updateDealStatus({
+        const deal = deps.dealService.updateDealStatus({
           userId: auth.user.id,
           dealId: request.params.id,
           status
@@ -436,8 +440,8 @@ export async function registerMarketplaceRoutes(
         getAuthorizationHeader(request)
       );
 
-      return {
-        chats: deps.listingMutationService.listChatsForUser({
+        return {
+        chats: deps.chatService.listChatsForUser({
           userId: auth.user.id
         })
       };
@@ -458,7 +462,7 @@ export async function registerMarketplaceRoutes(
         );
 
         return {
-          messages: deps.listingMutationService.listChatMessages({
+          messages: deps.chatService.listChatMessages({
             userId: auth.user.id,
             chatId: request.params.id
           })
@@ -485,7 +489,7 @@ export async function registerMarketplaceRoutes(
         }
 
         return {
-          message: deps.listingMutationService.createChatMessage({
+          message: deps.chatService.createChatMessage({
             userId: auth.user.id,
             chatId: request.params.id,
             text: body.text.trim()

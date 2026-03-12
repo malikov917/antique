@@ -5,7 +5,7 @@ The API integration coverage is split into focused suites in `apps/api/test`:
 - `api-uploads.test.ts`: upload and Mux webhook lifecycle.
 - `auth-session.test.ts`: OTP/session lifecycle, `/v1/me`, and auth token flows.
 - `seller-applications.test.ts`: seller application submission and admin review flow.
-- `marketplace-deals.test.ts`: marketplace session/listing/offer/deal lifecycle.
+- `marketplace-deals.test.ts`: marketplace session/listing/offer/deal lifecycle and chat/deal regressions across split domain services.
 - `tenant-guards.test.ts`: explicit cross-tenant guard regressions.
 - `sales-ledger.test.ts`: seller ledger and CSV export authorization/filter behavior.
 - `trust-safety-notifications.test.ts`: trust/safety enforcement, notification delivery, and observability summary.
