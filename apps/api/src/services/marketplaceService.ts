@@ -158,6 +158,8 @@ function toDeal(row: DealRow): Deal {
     paymentOverdueAt: row.payment_overdue_at === null ? null : toIso(row.payment_overdue_at),
     paymentExtendedAt: row.payment_extended_at === null ? null : toIso(row.payment_extended_at),
     paymentTimeoutReason: row.payment_timeout_reason,
+    activeShippingAddress: "",
+    addressCorrection: null,
     createdAt: toIso(row.created_at),
     updatedAt: toIso(row.updated_at)
   };

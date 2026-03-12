@@ -398,7 +398,7 @@ export class SqliteDealDomainService implements DealDomainService {
         nextStatus: DealStatus,
         refundConfirmed: boolean
       ): Deal => {
-        const context = this.getDealParticipantContext(dealId);
+        const context = this.getDealParticipantContext(dealId, userId);
         if (!context) {
           throw new AuthError("deal_not_found", "Deal was not found", 404);
         }
@@ -507,7 +507,7 @@ export class SqliteDealDomainService implements DealDomainService {
         if (!context) {
           throw new AuthError("deal_not_found", "Deal was not found", 404);
         }
-        this.assertUserCanAccessDeal(context, userId);
+        this.assertUserCanAccessDeal(context, userId, context.actor_role);
         this.assertDealAllowsAddressCorrection(context.status);
 
         const correctionId = newId();
