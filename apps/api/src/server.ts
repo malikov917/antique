@@ -85,14 +85,16 @@ export async function buildServer(params: BuildServerParams): Promise<FastifyIns
     dbClient.sqlite,
     {
       offerSubmitPerUserPerHour: params.config.offerSubmitPerUserPerHour,
-      offerDecisionPerSellerPerHour: params.config.offerDecisionPerSellerPerHour
+      offerDecisionPerSellerPerHour: params.config.offerDecisionPerSellerPerHour,
+      dealPaymentDueAfterMs: params.config.dealPaymentDueAfterSec * 1000
     },
     params.now
   );
   const dealService = new SqliteDealDomainService(
     dbClient.sqlite,
     {
-      offerDecisionPerSellerPerHour: params.config.offerDecisionPerSellerPerHour
+      offerDecisionPerSellerPerHour: params.config.offerDecisionPerSellerPerHour,
+      dealPaymentDueAfterMs: params.config.dealPaymentDueAfterSec * 1000
     },
     params.now
   );
@@ -106,6 +108,26 @@ export async function buildServer(params: BuildServerParams): Promise<FastifyIns
   const observabilityService = new ObservabilityService(dbClient.sqlite, params.now);
   const retentionPurgeService = new RetentionPurgeService(dbClient.sqlite, params.now);
   let retentionTimer: ReturnType<typeof setInterval> | undefined;
+  let paymentOverdueTimer: ReturnType<typeof setInterval> | undefined;
+
+  if (params.config.paymentOverdueSweepEnabled) {
+    paymentOverdueTimer = setInterval(() => {
+      try {
+        const result = marketplaceService.runPaymentOverdueSweep();
+        app.log.info(
+          {
+            transitionedDealCount: result.transitionedDealCount,
+            overdueOpenDealCount: result.overdueOpenDealCount,
+            oldestDueOpenDealAgeMs: result.oldestDueOpenDealAgeMs
+          },
+          "Payment overdue sweep run completed"
+        );
+      } catch (error) {
+        app.log.error({ err: error }, "Payment overdue sweep run failed");
+      }
+    }, params.config.paymentOverdueSweepIntervalSec * 1000);
+    paymentOverdueTimer.unref();
+  }
 
   if (params.config.retentionPurgeEnabled) {
     retentionTimer = setInterval(() => {
@@ -205,6 +227,9 @@ export async function buildServer(params: BuildServerParams): Promise<FastifyIns
   });
 
   app.addHook("onClose", async () => {
+    if (paymentOverdueTimer) {
+      clearInterval(paymentOverdueTimer);
+    }
     if (retentionTimer) {
       clearInterval(retentionTimer);
     }

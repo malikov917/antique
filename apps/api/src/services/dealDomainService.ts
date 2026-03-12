@@ -36,6 +36,10 @@ interface DealRow {
   seller_user_id: string;
   buyer_user_id: string;
   status: DealStatus;
+  payment_due_at: number;
+  payment_overdue_at: number | null;
+  payment_extended_at: number | null;
+  payment_timeout_reason: string | null;
   created_at: number;
   updated_at: number;
 }
@@ -46,6 +50,7 @@ interface DealParticipantRow extends DealRow {
 
 export interface DealDomainRuntimeConfig {
   offerDecisionPerSellerPerHour: number;
+  dealPaymentDueAfterMs: number;
 }
 
 function toIso(timestamp: number): string {
@@ -72,6 +77,10 @@ function toDeal(row: DealRow): Deal {
     sellerUserId: row.seller_user_id,
     buyerUserId: row.buyer_user_id,
     status: row.status,
+    paymentDueAt: toIso(row.payment_due_at),
+    paymentOverdueAt: row.payment_overdue_at === null ? null : toIso(row.payment_overdue_at),
+    paymentExtendedAt: row.payment_extended_at === null ? null : toIso(row.payment_extended_at),
+    paymentTimeoutReason: row.payment_timeout_reason,
     createdAt: toIso(row.created_at),
     updatedAt: toIso(row.updated_at)
   };
@@ -274,6 +283,10 @@ export class SqliteDealDomainService implements DealDomainService {
             deals.seller_user_id,
             deals.buyer_user_id,
             deals.status,
+            deals.payment_due_at,
+            deals.payment_overdue_at,
+            deals.payment_extended_at,
+            deals.payment_timeout_reason,
             deals.created_at,
             deals.updated_at
           FROM deals
@@ -371,10 +384,14 @@ export class SqliteDealDomainService implements DealDomainService {
       }
 
       if (context.status !== "cancellation_requested") {
-        if (context.status !== "open" && context.status !== "paid") {
+        if (
+          context.status !== "open" &&
+          context.status !== "paid" &&
+          context.status !== "payment_overdue"
+        ) {
           throw new AuthError(
             "deal_cancellation_not_allowed",
-            "Cancellation can only be requested for open or paid deals",
+            "Cancellation can only be requested for open, payment_overdue, or paid deals",
             409
           );
         }
@@ -449,6 +466,10 @@ export class SqliteDealDomainService implements DealDomainService {
             seller_user_id,
             buyer_user_id,
             status,
+            payment_due_at,
+            payment_overdue_at,
+            payment_extended_at,
+            payment_timeout_reason,
             created_at,
             updated_at
           FROM deals
@@ -470,6 +491,10 @@ export class SqliteDealDomainService implements DealDomainService {
             seller_user_id,
             buyer_user_id,
             status,
+            payment_due_at,
+            payment_overdue_at,
+            payment_extended_at,
+            payment_timeout_reason,
             created_at,
             updated_at
           FROM deals
@@ -510,9 +535,13 @@ export class SqliteDealDomainService implements DealDomainService {
             seller_user_id,
             buyer_user_id,
             status,
+            payment_due_at,
+            payment_overdue_at,
+            payment_extended_at,
+            payment_timeout_reason,
             created_at,
             updated_at
-          ) VALUES (?, ?, ?, ?, ?, 'open', ?, ?)
+          ) VALUES (?, ?, ?, ?, ?, 'open', ?, NULL, NULL, NULL, ?, ?)
         `
       )
       .run(
@@ -521,6 +550,7 @@ export class SqliteDealDomainService implements DealDomainService {
         params.offerId,
         params.sellerUserId,
         params.buyerUserId,
+        this.resolveInitialPaymentDueAt(params.nowTs),
         params.nowTs,
         params.nowTs
       );
@@ -535,6 +565,10 @@ export class SqliteDealDomainService implements DealDomainService {
             seller_user_id,
             buyer_user_id,
             status,
+            payment_due_at,
+            payment_overdue_at,
+            payment_extended_at,
+            payment_timeout_reason,
             created_at,
             updated_at
           FROM deals
@@ -583,6 +617,10 @@ export class SqliteDealDomainService implements DealDomainService {
             deals.seller_user_id,
             deals.buyer_user_id,
             deals.status,
+            deals.payment_due_at,
+            deals.payment_overdue_at,
+            deals.payment_extended_at,
+            deals.payment_timeout_reason,
             deals.created_at,
             deals.updated_at,
             listings.tenant_id
@@ -706,6 +744,10 @@ export class SqliteDealDomainService implements DealDomainService {
         );
       }
     }
+  }
+
+  private resolveInitialPaymentDueAt(createdAtMs: number): number {
+    return createdAtMs + Math.max(1, this.runtimeConfig.dealPaymentDueAfterMs);
   }
 
   private resolveListingTenantId(listingId: string): string {

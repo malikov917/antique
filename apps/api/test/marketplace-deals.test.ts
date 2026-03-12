@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { buildServer } from "../src/server.js";
 import { createDatabaseClient } from "../src/db/client.js";
+import { MarketplaceService } from "../src/services/marketplaceService.js";
 import {
   buildMockMuxClient,
   buildTestConfig,
@@ -981,6 +982,149 @@ describe("marketplace deals api", () => {
       event_type: "deal_refund_confirmed",
       reason_code: "admin_resolution"
     });
+
+    await app.close();
+  });
+
+  it("transitions open deals to payment_overdue via sweep and keeps transitions idempotent", async () => {
+    const smsProvider = new TestSmsProvider();
+    const dbClient = createDatabaseClient(":memory:");
+    let nowMs = Date.now();
+    const app = await buildServer({
+      config: buildTestConfig({
+        dealPaymentDueAfterSec: 60
+      }),
+      smsProvider,
+      muxClient: buildMockMuxClient(),
+      dbClient,
+      now: () => nowMs
+    });
+
+    const seller = await createAuthenticatedSeller(app, smsProvider, dbClient, "+14155552693");
+    const buyer = await createAuthenticatedUser(app, smsProvider, "+14155552694");
+
+    const openResponse = await app.inject({
+      method: "POST",
+      url: "/v1/seller/sessions/open",
+      headers: {
+        authorization: `Bearer ${seller.accessToken}`
+      }
+    });
+    const sessionId = openResponse.json().session.id as string;
+    dbClient.sqlite
+      .prepare(
+        `
+          INSERT INTO listings (id, seller_user_id, market_session_id, tenant_id, status, created_at, updated_at)
+          VALUES ('listing-overdue-1', ?, ?, ?, 'live', ?, ?)
+        `
+      )
+      .run(seller.userId, sessionId, "default", nowMs, nowMs);
+
+    const offerResponse = await app.inject({
+      method: "POST",
+      url: "/v1/listings/listing-overdue-1/offers",
+      headers: {
+        authorization: `Bearer ${buyer.accessToken}`
+      },
+      payload: {
+        amountCents: 25000,
+        shippingAddress: "201 Timeout Street"
+      }
+    });
+    const offerId = offerResponse.json().offer.id as string;
+
+    const acceptResponse = await app.inject({
+      method: "POST",
+      url: `/v1/offers/${offerId}/accept`,
+      headers: {
+        authorization: `Bearer ${seller.accessToken}`
+      }
+    });
+    expect(acceptResponse.statusCode).toBe(200);
+    const dealId = acceptResponse.json().deal.id as string;
+    expect(acceptResponse.json().deal).toMatchObject({
+      status: "open",
+      paymentOverdueAt: null,
+      paymentTimeoutReason: null
+    });
+
+    const overdueByApi = await app.inject({
+      method: "PATCH",
+      url: `/v1/deals/${dealId}/status`,
+      headers: {
+        authorization: `Bearer ${seller.accessToken}`
+      },
+      payload: {
+        status: "payment_overdue"
+      }
+    });
+    expect(overdueByApi.statusCode).toBe(400);
+    expect(overdueByApi.json()).toMatchObject({
+      code: "invalid_request"
+    });
+
+    nowMs += 61_000;
+    const sweep = new MarketplaceService(
+      dbClient.sqlite,
+      {
+        offerSubmitPerUserPerHour: 30,
+        offerDecisionPerSellerPerHour: 120,
+        dealPaymentDueAfterMs: 60_000
+      },
+      () => nowMs
+    );
+
+    const firstRun = sweep.runPaymentOverdueSweep();
+    expect(firstRun.transitionedDealCount).toBe(1);
+    expect(firstRun.overdueOpenDealCount).toBe(0);
+
+    const secondRun = sweep.runPaymentOverdueSweep();
+    expect(secondRun.transitionedDealCount).toBe(0);
+
+    const dealsResponse = await app.inject({
+      method: "GET",
+      url: "/v1/deals/me",
+      headers: {
+        authorization: `Bearer ${seller.accessToken}`
+      }
+    });
+    expect(dealsResponse.statusCode).toBe(200);
+    expect(dealsResponse.json().deals[0]).toMatchObject({
+      id: dealId,
+      status: "payment_overdue",
+      paymentOverdueAt: new Date(nowMs).toISOString(),
+      paymentTimeoutReason: "payment_deadline_elapsed"
+    });
+
+    const buyerPaid = await app.inject({
+      method: "PATCH",
+      url: `/v1/deals/${dealId}/status`,
+      headers: {
+        authorization: `Bearer ${buyer.accessToken}`
+      },
+      payload: {
+        status: "paid"
+      }
+    });
+    expect(buyerPaid.statusCode).toBe(200);
+    expect(buyerPaid.json().deal).toMatchObject({
+      status: "paid"
+    });
+
+    const timeoutAuditRows = dbClient.sqlite
+      .prepare(
+        `
+          SELECT event_type, reason_code, metadata_json
+          FROM audit_events
+          WHERE event_type = 'deal_payment_timeout'
+            AND reason_code = 'payment_deadline_elapsed'
+        `
+      )
+      .all() as Array<{ event_type: string; reason_code: string; metadata_json: string }>;
+    expect(timeoutAuditRows).toHaveLength(1);
+    const timeoutAudit = timeoutAuditRows[0];
+    expect(timeoutAudit).toBeDefined();
+    expect(JSON.parse(timeoutAudit!.metadata_json)).toMatchObject({ dealId });
 
     await app.close();
   });

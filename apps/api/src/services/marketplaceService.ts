@@ -1,13 +1,17 @@
 import type { Database } from "better-sqlite3";
 import type {
   BasketItem,
+  Chat,
+  ChatMessage,
+  Deal,
+  DealStatus,
   Listing,
   ListingStatus,
   MarketSession,
   MarketSessionStatus,
   Offer
 } from "@antique/types";
-import { MIN_OFFER_RULE } from "@antique/types";
+import { MIN_OFFER_RULE, isDealStatusTransitionAllowed } from "@antique/types";
 import { AuthError } from "../auth/errors.js";
 import { requireTenantScope } from "../auth/guards.js";
 import { newId } from "../auth/crypto.js";
@@ -49,14 +53,69 @@ interface ListingRow {
   updated_at: number;
 }
 
+interface OfferRow {
+  id: string;
+  listing_id: string;
+  buyer_user_id: string;
+  amount_cents: number;
+  shipping_address: string;
+  status: "submitted" | "accepted" | "declined";
+  created_at: number;
+}
+
+interface OfferContextRow extends OfferRow {
+  seller_user_id: string;
+  listing_status: ListingStatus;
+  session_status: MarketSessionStatus;
+}
+
+interface DealRow {
+  id: string;
+  listing_id: string;
+  accepted_offer_id: string;
+  seller_user_id: string;
+  buyer_user_id: string;
+  status: DealStatus;
+  payment_due_at: number;
+  payment_overdue_at: number | null;
+  payment_extended_at: number | null;
+  payment_timeout_reason: string | null;
+  created_at: number;
+  updated_at: number;
+}
+
+interface DealParticipantRow extends DealRow {
+  tenant_id: string | null;
+}
+
+interface ChatRow {
+  id: string;
+  deal_id: string;
+  listing_id: string;
+  seller_user_id: string;
+  buyer_user_id: string;
+  tenant_id: string | null;
+  created_at: number;
+  updated_at: number;
+}
+
+interface ChatMessageRow {
+  id: string;
+  chat_id: string;
+  sender_user_id: string;
+  body: string;
+  created_at: number;
+}
 export interface MarketplaceRuntimeConfig {
   offerSubmitPerUserPerHour: number;
   offerDecisionPerSellerPerHour: number;
+  dealPaymentDueAfterMs: number;
 }
 
 const DEFAULT_RUNTIME_CONFIG: MarketplaceRuntimeConfig = {
   offerSubmitPerUserPerHour: 30,
-  offerDecisionPerSellerPerHour: 120
+  offerDecisionPerSellerPerHour: 120,
+  dealPaymentDueAfterMs: 48 * 60 * 60 * 1000
 };
 
 function toIso(timestamp: number): string {
@@ -75,6 +134,62 @@ function toMarketSession(row: MarketSessionRow): MarketSession {
   };
 }
 
+function toOffer(row: OfferRow): Offer {
+  return {
+    id: row.id,
+    listingId: row.listing_id,
+    buyerUserId: row.buyer_user_id,
+    amountCents: row.amount_cents,
+    shippingAddress: row.shipping_address,
+    status: row.status,
+    createdAt: toIso(row.created_at)
+  };
+}
+
+function toDeal(row: DealRow): Deal {
+  return {
+    id: row.id,
+    listingId: row.listing_id,
+    acceptedOfferId: row.accepted_offer_id,
+    sellerUserId: row.seller_user_id,
+    buyerUserId: row.buyer_user_id,
+    status: row.status,
+    paymentDueAt: toIso(row.payment_due_at),
+    paymentOverdueAt: row.payment_overdue_at === null ? null : toIso(row.payment_overdue_at),
+    paymentExtendedAt: row.payment_extended_at === null ? null : toIso(row.payment_extended_at),
+    paymentTimeoutReason: row.payment_timeout_reason,
+    createdAt: toIso(row.created_at),
+    updatedAt: toIso(row.updated_at)
+  };
+}
+
+function toChat(row: ChatRow): Chat {
+  return {
+    id: row.id,
+    dealId: row.deal_id,
+    listingId: row.listing_id,
+    sellerUserId: row.seller_user_id,
+    buyerUserId: row.buyer_user_id,
+    createdAt: toIso(row.created_at),
+    updatedAt: toIso(row.updated_at)
+  };
+}
+
+function toChatMessage(row: ChatMessageRow): ChatMessage {
+  return {
+    id: row.id,
+    chatId: row.chat_id,
+    senderUserId: row.sender_user_id,
+    text: row.body,
+    createdAt: toIso(row.created_at)
+  };
+}
+
+export interface PaymentOverdueSweepResult {
+  transitionedDealCount: number;
+  oldestDueOpenDealAgeMs: number | null;
+  overdueOpenDealCount: number;
+}
 function toListing(row: ListingRow): Listing {
   return {
     id: row.id,
@@ -418,6 +533,405 @@ export class MarketplaceService
     };
   }
 
+  listSellerListingOffers(params: { sellerUserId: string; listingId: string }): Offer[] {
+    this.assertSellerNotSuspended(params.sellerUserId);
+    this.assertListingOwnedBySeller(params.listingId, params.sellerUserId);
+    const sellerTenantId = this.resolveUserTenantId(params.sellerUserId);
+    const rows = this.sqlite
+      .prepare(
+        `
+          SELECT id, listing_id, buyer_user_id, amount_cents, shipping_address, status, created_at
+          FROM offers
+          WHERE listing_id = ?
+            AND tenant_id = ?
+          ORDER BY created_at DESC, id DESC
+        `
+      )
+      .all(params.listingId, sellerTenantId) as OfferRow[];
+
+    return rows.map((row) => toOffer(row));
+  }
+
+  listDealsForUser(params: { userId: string }): Deal[] {
+    const tenantId = this.resolveUserTenantId(params.userId);
+    const rows = this.sqlite
+      .prepare(
+        `
+          SELECT
+            deals.id,
+            deals.listing_id,
+            deals.accepted_offer_id,
+            deals.seller_user_id,
+            deals.buyer_user_id,
+            deals.status,
+            deals.payment_due_at,
+            deals.payment_overdue_at,
+            deals.payment_extended_at,
+            deals.payment_timeout_reason,
+            deals.created_at,
+            deals.updated_at
+          FROM deals
+          INNER JOIN listings ON listings.id = deals.listing_id
+          WHERE (deals.seller_user_id = ? OR deals.buyer_user_id = ?)
+            AND listings.tenant_id = ?
+          ORDER BY deals.updated_at DESC, deals.id DESC
+        `
+      )
+      .all(params.userId, params.userId, tenantId) as DealRow[];
+
+    return rows.map((row) => toDeal(row));
+  }
+
+  updateDealStatus(params: {
+    userId: string;
+    dealId: string;
+    status: "paid" | "completed" | "canceled";
+  }): Deal {
+    const timestamp = this.now();
+    const tx = this.sqlite.transaction((userId: string, dealId: string, nextStatus: DealStatus): Deal => {
+      const context = this.getDealParticipantContext(dealId);
+      if (!context) {
+        throw new AuthError("deal_not_found", "Deal was not found", 404);
+      }
+      this.assertUserCanAccessDeal(context, userId);
+      this.assertDealStatusTransitionAllowed(context.status, nextStatus);
+
+      if (context.status !== nextStatus) {
+        this.sqlite
+          .prepare("UPDATE deals SET status = ?, updated_at = ? WHERE id = ?")
+          .run(nextStatus, timestamp, dealId);
+      }
+
+      const updated = this.getDealById(dealId);
+      if (!updated) {
+        throw new AuthError("deal_not_found", "Deal was not found", 404);
+      }
+      return toDeal(updated);
+    });
+
+    return tx(params.userId, params.dealId, params.status);
+  }
+
+  runPaymentOverdueSweep(): PaymentOverdueSweepResult {
+    const nowTs = this.now();
+    const tx = this.sqlite.transaction(
+      (timestamp: number): { transitionedDealIds: string[] } => {
+        const dueRows = this.sqlite
+          .prepare(
+            `
+              SELECT id
+              FROM deals
+              WHERE status = 'open'
+                AND payment_due_at <= ?
+              ORDER BY payment_due_at ASC
+            `
+          )
+          .all(timestamp) as Array<{ id: string }>;
+
+        if (dueRows.length === 0) {
+          return { transitionedDealIds: [] };
+        }
+
+        this.sqlite
+          .prepare(
+            `
+              UPDATE deals
+              SET status = 'payment_overdue',
+                  payment_overdue_at = ?,
+                  payment_timeout_reason = 'payment_deadline_elapsed',
+                  updated_at = ?
+              WHERE status = 'open'
+                AND payment_due_at <= ?
+            `
+          )
+          .run(timestamp, timestamp, timestamp);
+
+        return {
+          transitionedDealIds: dueRows.map((row) => row.id)
+        };
+      }
+    );
+
+    const result = tx(nowTs);
+    for (const dealId of result.transitionedDealIds) {
+      this.recordDealPaymentTimeoutAudit({
+        dealId,
+        timeoutAtMs: nowTs
+      });
+    }
+
+    return {
+      transitionedDealCount: result.transitionedDealIds.length,
+      ...this.getPaymentOverdueMetrics()
+    };
+  }
+
+  getPaymentOverdueMetrics(): {
+    oldestDueOpenDealAgeMs: number | null;
+    overdueOpenDealCount: number;
+  } {
+    const nowTs = this.now();
+    const overdueCountRow = this.sqlite
+      .prepare(
+        `
+          SELECT COUNT(1) AS count
+          FROM deals
+          WHERE status = 'open'
+            AND payment_due_at <= ?
+        `
+      )
+      .get(nowTs) as { count: number } | undefined;
+    const oldestDueRow = this.sqlite
+      .prepare(
+        `
+          SELECT MIN(payment_due_at) AS oldest_due_at
+          FROM deals
+          WHERE status = 'open'
+            AND payment_due_at <= ?
+        `
+      )
+      .get(nowTs) as { oldest_due_at: number | null } | undefined;
+
+    return {
+      overdueOpenDealCount: overdueCountRow?.count ?? 0,
+      oldestDueOpenDealAgeMs:
+        oldestDueRow?.oldest_due_at === null || oldestDueRow?.oldest_due_at === undefined
+          ? null
+          : Math.max(0, nowTs - oldestDueRow.oldest_due_at)
+    };
+  }
+
+  listChatsForUser(params: { userId: string }): Chat[] {
+    const tenantId = this.resolveUserTenantId(params.userId);
+    const rows = this.sqlite
+      .prepare(
+        `
+          SELECT
+            id,
+            deal_id,
+            listing_id,
+            seller_user_id,
+            buyer_user_id,
+            tenant_id,
+            created_at,
+            updated_at
+          FROM chats
+          WHERE (seller_user_id = ? OR buyer_user_id = ?)
+            AND tenant_id = ?
+          ORDER BY updated_at DESC, id DESC
+        `
+      )
+      .all(params.userId, params.userId, tenantId) as ChatRow[];
+
+    return rows.map((row) => toChat(row));
+  }
+
+  listChatMessages(params: { userId: string; chatId: string }): ChatMessage[] {
+    this.assertUserCanAccessChat(params.chatId, params.userId);
+    const rows = this.sqlite
+      .prepare(
+        `
+          SELECT id, chat_id, sender_user_id, body, created_at
+          FROM chat_messages
+          WHERE chat_id = ?
+          ORDER BY created_at ASC, id ASC
+        `
+      )
+      .all(params.chatId) as ChatMessageRow[];
+
+    return rows.map((row) => toChatMessage(row));
+  }
+
+  createChatMessage(params: { userId: string; chatId: string; text: string }): ChatMessage {
+    this.assertUserCanAccessChat(params.chatId, params.userId);
+    const id = newId();
+    const timestamp = this.now();
+    this.sqlite
+      .prepare(
+        `
+          INSERT INTO chat_messages (id, chat_id, sender_user_id, tenant_id, body, created_at)
+          VALUES (
+            ?,
+            ?,
+            ?,
+            (SELECT tenant_id FROM chats WHERE id = ?),
+            ?,
+            ?
+          )
+        `
+      )
+      .run(id, params.chatId, params.userId, params.chatId, params.text, timestamp);
+    this.sqlite
+      .prepare("UPDATE chats SET updated_at = ? WHERE id = ?")
+      .run(timestamp, params.chatId);
+
+    const row = this.sqlite
+      .prepare(
+        `
+          SELECT id, chat_id, sender_user_id, body, created_at
+          FROM chat_messages
+          WHERE id = ?
+          LIMIT 1
+        `
+      )
+      .get(id) as ChatMessageRow;
+    return toChatMessage(row);
+  }
+
+  acceptOffer(params: {
+    sellerUserId: string;
+    offerId: string;
+    requestIp?: string;
+  }): { offer: Offer; deal: Deal; autoDeclinedCount: number } {
+    this.assertSellerNotSuspended(params.sellerUserId);
+    this.assertOfferRateLimit(
+      params.sellerUserId,
+      "decision",
+      this.runtimeConfig.offerDecisionPerSellerPerHour
+    );
+    const nowTs = this.now();
+    const tx = this.sqlite.transaction(
+      (
+        sellerUserId: string,
+        offerId: string,
+        timestamp: number
+      ): { offer: Offer; deal: Deal; autoDeclinedCount: number } => {
+        const context = this.getOfferContext(offerId);
+        if (!context) {
+          throw new AuthError("offer_not_found", "Offer was not found", 404);
+        }
+        if (context.seller_user_id !== sellerUserId) {
+          throw new AuthError("forbidden_owner_mismatch", "Offer does not belong to seller", 403);
+        }
+        this.assertListingCanBeDecided(context);
+
+        const existingDeal = this.findDealByListingId(context.listing_id);
+        if (existingDeal && existingDeal.accepted_offer_id !== offerId) {
+          throw new AuthError(
+            "offer_already_selected",
+            "Another offer has already been accepted for this listing",
+            409
+          );
+        }
+        if (context.status === "declined") {
+          throw new AuthError("offer_not_actionable", "Declined offers cannot be accepted", 409);
+        }
+
+        if (context.status === "submitted") {
+          this.sqlite
+            .prepare("UPDATE offers SET status = 'accepted' WHERE id = ? AND status = 'submitted'")
+            .run(offerId);
+        }
+
+        const offerRow = this.sqlite
+          .prepare(
+            `
+              SELECT id, listing_id, buyer_user_id, amount_cents, shipping_address, status, created_at
+              FROM offers
+              WHERE id = ?
+              LIMIT 1
+            `
+          )
+          .get(offerId) as OfferRow | undefined;
+        if (!offerRow || offerRow.status !== "accepted") {
+          throw new AuthError("offer_not_actionable", "Offer cannot be accepted", 409);
+        }
+
+        let autoDeclinedCount = 0;
+        if (context.status === "submitted") {
+          autoDeclinedCount = this.sqlite
+            .prepare(
+              `
+                UPDATE offers
+                SET status = 'declined'
+                WHERE listing_id = ?
+                  AND id <> ?
+                  AND status = 'submitted'
+              `
+            )
+            .run(context.listing_id, offerId).changes;
+        }
+
+        this.sqlite
+          .prepare("UPDATE listings SET status = 'sold', updated_at = ? WHERE id = ?")
+          .run(timestamp, context.listing_id);
+
+        const deal = this.ensureDeal({
+          listingId: context.listing_id,
+          offerId,
+          sellerUserId: context.seller_user_id,
+          buyerUserId: offerRow.buyer_user_id,
+          nowTs: timestamp
+        });
+        this.ensureChatForDeal(deal, context.listing_id, timestamp);
+
+        return {
+          offer: toOffer(offerRow),
+          deal,
+          autoDeclinedCount
+        };
+      }
+    );
+    const result = tx(params.sellerUserId, params.offerId, nowTs);
+    this.recordOfferAction({
+      actorUserId: params.sellerUserId,
+      actorRole: "seller",
+      reasonCode: "decision",
+      requestIp: params.requestIp ?? null,
+      metadata: { offerId: params.offerId, action: "accept" }
+    });
+    return result;
+  }
+
+  declineOffer(params: { sellerUserId: string; offerId: string; requestIp?: string }): Offer {
+    this.assertSellerNotSuspended(params.sellerUserId);
+    this.assertOfferRateLimit(
+      params.sellerUserId,
+      "decision",
+      this.runtimeConfig.offerDecisionPerSellerPerHour
+    );
+    const tx = this.sqlite.transaction((sellerUserId: string, offerId: string): Offer => {
+      const context = this.getOfferContext(offerId);
+      if (!context) {
+        throw new AuthError("offer_not_found", "Offer was not found", 404);
+      }
+      if (context.seller_user_id !== sellerUserId) {
+        throw new AuthError("forbidden_owner_mismatch", "Offer does not belong to seller", 403);
+      }
+      this.assertListingCanBeDecided(context);
+
+      if (context.status === "accepted") {
+        throw new AuthError("offer_not_actionable", "Accepted offers cannot be declined", 409);
+      }
+      if (context.status === "declined") {
+        return toOffer(context);
+      }
+
+      this.sqlite
+        .prepare("UPDATE offers SET status = 'declined' WHERE id = ? AND status = 'submitted'")
+        .run(offerId);
+      const offerRow = this.sqlite
+        .prepare(
+          `
+            SELECT id, listing_id, buyer_user_id, amount_cents, shipping_address, status, created_at
+            FROM offers
+            WHERE id = ?
+            LIMIT 1
+          `
+        )
+        .get(offerId) as OfferRow;
+      return toOffer(offerRow);
+    });
+    const offer = tx(params.sellerUserId, params.offerId);
+    this.recordOfferAction({
+      actorUserId: params.sellerUserId,
+      actorRole: "seller",
+      reasonCode: "decision",
+      requestIp: params.requestIp ?? null,
+      metadata: { offerId: params.offerId, action: "decline" }
+    });
+    return offer;
+  }
   private assertListingAllowsBuyerMutation(params: {
     listingId: string;
     buyerUserId: string;
@@ -494,6 +1008,313 @@ export class MarketplaceService
     return session;
   }
 
+  private assertListingOwnedBySeller(listingId: string, sellerUserId: string): void {
+    const row = this.sqlite
+      .prepare(
+        `
+          SELECT seller_user_id
+          FROM listings
+          WHERE id = ?
+          LIMIT 1
+        `
+      )
+      .get(listingId) as { seller_user_id: string } | undefined;
+
+    if (!row) {
+      throw new AuthError("listing_not_found", "Listing was not found", 404);
+    }
+    if (row.seller_user_id !== sellerUserId) {
+      throw new AuthError("forbidden_owner_mismatch", "Listing does not belong to seller", 403);
+    }
+  }
+
+  private getOfferContext(offerId: string): OfferContextRow | undefined {
+    return this.sqlite
+      .prepare(
+        `
+          SELECT
+            offers.id,
+            offers.listing_id,
+            offers.buyer_user_id,
+            offers.amount_cents,
+            offers.shipping_address,
+            offers.status,
+            offers.created_at,
+            listings.seller_user_id,
+            listings.status AS listing_status,
+            market_sessions.status AS session_status
+          FROM offers
+          INNER JOIN listings ON listings.id = offers.listing_id
+          INNER JOIN market_sessions ON market_sessions.id = listings.market_session_id
+          WHERE offers.id = ?
+          LIMIT 1
+        `
+      )
+      .get(offerId) as OfferContextRow | undefined;
+  }
+
+  private findDealByListingId(listingId: string): DealRow | undefined {
+    return this.sqlite
+      .prepare(
+        `
+          SELECT
+            id,
+            listing_id,
+            accepted_offer_id,
+            seller_user_id,
+            buyer_user_id,
+            status,
+            payment_due_at,
+            payment_overdue_at,
+            payment_extended_at,
+            payment_timeout_reason,
+            created_at,
+            updated_at
+          FROM deals
+          WHERE listing_id = ?
+          LIMIT 1
+        `
+      )
+      .get(listingId) as DealRow | undefined;
+  }
+
+  private getDealById(dealId: string): DealRow | undefined {
+    return this.sqlite
+      .prepare(
+        `
+          SELECT
+            id,
+            listing_id,
+            accepted_offer_id,
+            seller_user_id,
+            buyer_user_id,
+            status,
+            payment_due_at,
+            payment_overdue_at,
+            payment_extended_at,
+            payment_timeout_reason,
+            created_at,
+            updated_at
+          FROM deals
+          WHERE id = ?
+          LIMIT 1
+        `
+      )
+      .get(dealId) as DealRow | undefined;
+  }
+
+  private ensureDeal(params: {
+    listingId: string;
+    offerId: string;
+    sellerUserId: string;
+    buyerUserId: string;
+    nowTs: number;
+  }): Deal {
+    const existing = this.findDealByListingId(params.listingId);
+    if (existing) {
+      if (existing.accepted_offer_id !== params.offerId) {
+        throw new AuthError(
+          "offer_already_selected",
+          "Another offer has already been accepted for this listing",
+          409
+        );
+      }
+      return toDeal(existing);
+    }
+
+    const id = newId();
+    this.sqlite
+      .prepare(
+        `
+          INSERT INTO deals (
+            id,
+            listing_id,
+            accepted_offer_id,
+            seller_user_id,
+            buyer_user_id,
+            status,
+            payment_due_at,
+            payment_overdue_at,
+            payment_extended_at,
+            payment_timeout_reason,
+            created_at,
+            updated_at
+          ) VALUES (?, ?, ?, ?, ?, 'open', ?, NULL, NULL, NULL, ?, ?)
+        `
+      )
+      .run(
+        id,
+        params.listingId,
+        params.offerId,
+        params.sellerUserId,
+        params.buyerUserId,
+        this.resolveInitialPaymentDueAt(params.nowTs),
+        params.nowTs,
+        params.nowTs
+      );
+
+    const created = this.sqlite
+      .prepare(
+        `
+          SELECT
+            id,
+            listing_id,
+            accepted_offer_id,
+            seller_user_id,
+            buyer_user_id,
+            status,
+            payment_due_at,
+            payment_overdue_at,
+            payment_extended_at,
+            payment_timeout_reason,
+            created_at,
+            updated_at
+          FROM deals
+          WHERE id = ?
+          LIMIT 1
+        `
+      )
+      .get(id) as DealRow;
+    return toDeal(created);
+  }
+
+  private ensureChatForDeal(deal: Deal, listingId: string, timestamp: number): void {
+    const existing = this.sqlite
+      .prepare("SELECT id FROM chats WHERE deal_id = ? LIMIT 1")
+      .get(deal.id) as { id: string } | undefined;
+    if (existing) {
+      return;
+    }
+    const tenantId = this.resolveListingTenantId(listingId);
+    this.sqlite
+      .prepare(
+        `
+          INSERT INTO chats (
+            id,
+            deal_id,
+            listing_id,
+            seller_user_id,
+            buyer_user_id,
+            tenant_id,
+            created_at,
+            updated_at
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        `
+      )
+      .run(newId(), deal.id, listingId, deal.sellerUserId, deal.buyerUserId, tenantId, timestamp, timestamp);
+  }
+
+  private getDealParticipantContext(dealId: string): DealParticipantRow | undefined {
+    return this.sqlite
+      .prepare(
+        `
+          SELECT
+            deals.id,
+            deals.listing_id,
+            deals.accepted_offer_id,
+            deals.seller_user_id,
+            deals.buyer_user_id,
+            deals.status,
+            deals.payment_due_at,
+            deals.payment_overdue_at,
+            deals.payment_extended_at,
+            deals.payment_timeout_reason,
+            deals.created_at,
+            deals.updated_at,
+            listings.tenant_id
+          FROM deals
+          INNER JOIN listings ON listings.id = deals.listing_id
+          WHERE deals.id = ?
+          LIMIT 1
+        `
+      )
+      .get(dealId) as DealParticipantRow | undefined;
+  }
+
+  private assertUserCanAccessDeal(deal: DealParticipantRow, userId: string): void {
+    if (deal.seller_user_id !== userId && deal.buyer_user_id !== userId) {
+      throw new AuthError("forbidden_owner_mismatch", "Deal does not belong to user", 403);
+    }
+    const actorTenantId = this.resolveUserTenantId(userId);
+    if (!deal.tenant_id) {
+      throw new AuthError("forbidden_tenant_scope", "Deal tenant could not be resolved", 403);
+    }
+    requireTenantScope(deal.tenant_id, actorTenantId);
+  }
+
+  private assertDealStatusTransitionAllowed(current: DealStatus, next: DealStatus): void {
+    if (current === next) {
+      return;
+    }
+    if (!isDealStatusTransitionAllowed(current, next)) {
+      throw new AuthError("deal_invalid_status_transition", "Deal status transition is not allowed", 409);
+    }
+  }
+
+  private getChatById(chatId: string): ChatRow | undefined {
+    return this.sqlite
+      .prepare(
+        `
+          SELECT
+            id,
+            deal_id,
+            listing_id,
+            seller_user_id,
+            buyer_user_id,
+            tenant_id,
+            created_at,
+            updated_at
+          FROM chats
+          WHERE id = ?
+          LIMIT 1
+        `
+      )
+      .get(chatId) as ChatRow | undefined;
+  }
+
+  private assertUserCanAccessChat(chatId: string, userId: string): ChatRow {
+    const chat = this.getChatById(chatId);
+    if (!chat) {
+      throw new AuthError("chat_not_found", "Chat was not found", 404);
+    }
+    if (chat.seller_user_id !== userId && chat.buyer_user_id !== userId) {
+      throw new AuthError("forbidden_owner_mismatch", "Chat does not belong to user", 403);
+    }
+    const actorTenantId = this.resolveUserTenantId(userId);
+    if (!chat.tenant_id) {
+      throw new AuthError("forbidden_tenant_scope", "Chat tenant could not be resolved", 403);
+    }
+    requireTenantScope(chat.tenant_id, actorTenantId);
+    return chat;
+  }
+
+  private resolveListingTenantId(listingId: string): string {
+    const row = this.sqlite
+      .prepare("SELECT tenant_id FROM listings WHERE id = ? LIMIT 1")
+      .get(listingId) as { tenant_id: string } | undefined;
+    if (!row?.tenant_id) {
+      throw new AuthError("forbidden_tenant_scope", "Listing tenant could not be resolved", 403);
+    }
+    return row.tenant_id;
+  }
+
+  private assertListingCanBeDecided(context: OfferContextRow): void {
+    if (context.listing_status === "withdrawn" || context.listing_status === "day_closed") {
+      throw new AuthError(
+        "listing_unavailable",
+        "Listing is not in a state that allows offer decisions",
+        409
+      );
+    }
+    if (context.session_status !== "open" && context.listing_status !== "sold") {
+      throw new AuthError(
+        "listing_unavailable",
+        "Listing is not in a state that allows offer decisions",
+        409
+      );
+    }
+    this.assertUsersCanInteract(context.buyer_user_id, context.seller_user_id);
+  }
   private assertOfferRateLimit(actorUserId: string, reasonCode: "submit" | "decision", max: number): void {
     const hourAgo = this.now() - 60 * 60 * 1000;
     const row = this.sqlite
@@ -552,6 +1373,47 @@ export class MarketplaceService
         JSON.stringify(params.metadata),
         this.now()
       );
+  }
+
+  private recordDealPaymentTimeoutAudit(params: { dealId: string; timeoutAtMs: number }): void {
+    this.sqlite
+      .prepare(
+        `
+          INSERT INTO audit_events (
+            id,
+            event_type,
+            actor_user_id,
+            actor_role,
+            target_seller_user_id,
+            outcome,
+            reason_code,
+            request_ip,
+            metadata_json,
+            created_at
+          ) VALUES (
+            ?,
+            'deal_payment_timeout',
+            NULL,
+            'system',
+            (SELECT seller_user_id FROM deals WHERE id = ?),
+            'allowed',
+            'payment_deadline_elapsed',
+            NULL,
+            ?,
+            ?
+          )
+        `
+      )
+      .run(
+        newId(),
+        params.dealId,
+        JSON.stringify({ dealId: params.dealId }),
+        params.timeoutAtMs
+      );
+  }
+
+  private resolveInitialPaymentDueAt(createdAtMs: number): number {
+    return createdAtMs + Math.max(1, this.runtimeConfig.dealPaymentDueAfterMs);
   }
 
   private assertUsersCanInteract(userAId: string, userBId: string): void {

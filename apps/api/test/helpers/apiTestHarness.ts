@@ -57,8 +57,11 @@ export function buildTestConfig(overrides?: Partial<ApiConfig>): ApiConfig {
     authOtpVerifyPerPhoneIpPerHour: 10,
     offerSubmitPerUserPerHour: 30,
     offerDecisionPerSellerPerHour: 120,
+    dealPaymentDueAfterSec: 48 * 60 * 60,
+    paymentOverdueSweepEnabled: false,
+    paymentOverdueSweepIntervalSec: 60,
     retentionPurgeEnabled: false,
-    retentionPurgeIntervalSec: 60 * 60,
+    retentionPurgeIntervalSec: 60 * 60
   };
 
   return {
