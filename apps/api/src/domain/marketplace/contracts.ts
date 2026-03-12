@@ -63,10 +63,18 @@ export interface ListingMutationDomainService {
 export interface DealDomainService {
   listSellerListingOffers(params: { sellerUserId: string; listingId: string }): Offer[];
   listDealsForUser(params: { userId: string }): Deal[];
+  requestCancellation(params: {
+    userId: string;
+    userRole: "buyer" | "seller" | "admin";
+    dealId: string;
+  }): Deal;
   updateDealStatus(params: {
     userId: string;
+    userRole: "buyer" | "seller" | "admin";
     dealId: string;
-    status: "paid" | "completed" | "canceled";
+    status: "paid" | "cancellation_requested" | "completed" | "canceled" | "refunded";
+    reasonCode?: string;
+    refundConfirmed?: boolean;
   }): Deal;
   acceptOffer(params: { sellerUserId: string; offerId: string; requestIp?: string }): {
     offer: Offer;

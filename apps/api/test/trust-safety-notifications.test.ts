@@ -584,7 +584,7 @@ describe("trust safety notifications api", () => {
       method: "PATCH",
       url: `/v1/deals/${dealId}/status`,
       headers: {
-        authorization: `Bearer ${seller.accessToken}`
+        authorization: `Bearer ${buyer.accessToken}`
       },
       payload: {
         status: "paid"

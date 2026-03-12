@@ -32,6 +32,12 @@ function toLabel(type: NotificationItem["type"]): string {
       return "Market opened";
     case "session_closed":
       return "Market closed";
+    case "deal_cancellation_requested":
+      return "Cancellation requested";
+    case "deal_cancellation_resolved":
+      return "Cancellation resolved";
+    case "deal_refund_confirmed":
+      return "Refund confirmed";
     case "announcement":
       return "Announcement";
   }

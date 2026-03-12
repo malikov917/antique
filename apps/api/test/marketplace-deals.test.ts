@@ -777,6 +777,214 @@ describe("marketplace deals api", () => {
     await app.close();
   });
 
+  it("supports seller cancellation request and buyer resolution for unpaid deals", async () => {
+    const smsProvider = new TestSmsProvider();
+    const dbClient = createDatabaseClient(":memory:");
+    const app = await buildServer({
+      config: buildTestConfig(),
+      smsProvider,
+      muxClient: buildMockMuxClient(),
+      dbClient
+    });
+
+    const seller = await createAuthenticatedSeller(app, smsProvider, dbClient, "+14155552693");
+    const buyer = await createAuthenticatedUser(app, smsProvider, "+14155552694");
+
+    const openSession = await app.inject({
+      method: "POST",
+      url: "/v1/seller/sessions/open",
+      headers: { authorization: `Bearer ${seller.accessToken}` }
+    });
+    const sessionId = openSession.json().session.id as string;
+
+    dbClient.sqlite
+      .prepare(
+        `
+          INSERT INTO listings (id, seller_user_id, market_session_id, tenant_id, status, created_at, updated_at)
+          VALUES ('listing-cancel-open', ?, ?, ?, 'live', 1, 1)
+        `
+      )
+      .run(seller.userId, sessionId, "default");
+
+    const offerResponse = await app.inject({
+      method: "POST",
+      url: "/v1/listings/listing-cancel-open/offers",
+      headers: { authorization: `Bearer ${buyer.accessToken}` },
+      payload: { amountCents: 1600, shippingAddress: "12 Request Lane" }
+    });
+    const offerId = offerResponse.json().offer.id as string;
+
+    const acceptResponse = await app.inject({
+      method: "POST",
+      url: `/v1/offers/${offerId}/accept`,
+      headers: { authorization: `Bearer ${seller.accessToken}` }
+    });
+    const dealId = acceptResponse.json().deal.id as string;
+
+    const requestResponse = await app.inject({
+      method: "POST",
+      url: `/v1/deals/${dealId}/cancel-request`,
+      headers: { authorization: `Bearer ${seller.accessToken}` },
+      payload: { reasonCode: "seller_unavailable", note: "Item damaged during packing" }
+    });
+    expect(requestResponse.statusCode).toBe(200);
+    expect(requestResponse.json().deal).toMatchObject({ status: "cancellation_requested" });
+
+    const sellerResolveResponse = await app.inject({
+      method: "PATCH",
+      url: `/v1/deals/${dealId}/status`,
+      headers: { authorization: `Bearer ${seller.accessToken}` },
+      payload: { status: "canceled", reasonCode: "seller_unavailable" }
+    });
+    expect(sellerResolveResponse.statusCode).toBe(403);
+    expect(sellerResolveResponse.json()).toMatchObject({ code: "deal_cancellation_not_allowed" });
+
+    const buyerResolveResponse = await app.inject({
+      method: "PATCH",
+      url: `/v1/deals/${dealId}/status`,
+      headers: { authorization: `Bearer ${buyer.accessToken}` },
+      payload: { status: "canceled", reasonCode: "buyer_acknowledged" }
+    });
+    expect(buyerResolveResponse.statusCode).toBe(200);
+    expect(buyerResolveResponse.json().deal).toMatchObject({ status: "canceled" });
+
+    const auditRows = dbClient.sqlite
+      .prepare(
+        `
+          SELECT event_type, reason_code
+          FROM audit_events
+          WHERE event_type IN ('deal_cancellation_requested', 'deal_cancellation_resolved')
+          ORDER BY created_at ASC
+        `
+      )
+      .all() as Array<{ event_type: string; reason_code: string }>;
+    expect(auditRows).toEqual([
+      { event_type: "deal_cancellation_requested", reason_code: "seller_unavailable" },
+      { event_type: "deal_cancellation_resolved", reason_code: "buyer_acknowledged" }
+    ]);
+
+    await app.close();
+  });
+
+  it("requires admin refund confirmation for paid cancellation resolution", async () => {
+    const smsProvider = new TestSmsProvider();
+    const dbClient = createDatabaseClient(":memory:");
+    const app = await buildServer({
+      config: buildTestConfig(),
+      smsProvider,
+      muxClient: buildMockMuxClient(),
+      dbClient
+    });
+
+    const seller = await createAuthenticatedSeller(app, smsProvider, dbClient, "+14155552695");
+    const buyer = await createAuthenticatedUser(app, smsProvider, "+14155552696");
+    const admin = await createAuthenticatedSession(
+      app,
+      smsProvider,
+      "+14155552697",
+      "ios-device-cancel-admin"
+    );
+    dbClient.sqlite
+      .prepare("UPDATE users SET allowed_roles = ?, active_role = 'admin' WHERE id = ?")
+      .run(JSON.stringify(["buyer", "admin"]), admin.userId);
+
+    const openSession = await app.inject({
+      method: "POST",
+      url: "/v1/seller/sessions/open",
+      headers: { authorization: `Bearer ${seller.accessToken}` }
+    });
+    const sessionId = openSession.json().session.id as string;
+
+    dbClient.sqlite
+      .prepare(
+        `
+          INSERT INTO listings (id, seller_user_id, market_session_id, tenant_id, status, created_at, updated_at)
+          VALUES ('listing-cancel-paid', ?, ?, ?, 'live', 1, 1)
+        `
+      )
+      .run(seller.userId, sessionId, "default");
+
+    const offerResponse = await app.inject({
+      method: "POST",
+      url: "/v1/listings/listing-cancel-paid/offers",
+      headers: { authorization: `Bearer ${buyer.accessToken}` },
+      payload: { amountCents: 2200, shippingAddress: "44 Refund Ave" }
+    });
+    const offerId = offerResponse.json().offer.id as string;
+
+    const acceptResponse = await app.inject({
+      method: "POST",
+      url: `/v1/offers/${offerId}/accept`,
+      headers: { authorization: `Bearer ${seller.accessToken}` }
+    });
+    const dealId = acceptResponse.json().deal.id as string;
+
+    const paidResponse = await app.inject({
+      method: "PATCH",
+      url: `/v1/deals/${dealId}/status`,
+      headers: { authorization: `Bearer ${buyer.accessToken}` },
+      payload: { status: "paid" }
+    });
+    expect(paidResponse.statusCode).toBe(200);
+
+    const requestResponse = await app.inject({
+      method: "POST",
+      url: `/v1/deals/${dealId}/cancel-request`,
+      headers: { authorization: `Bearer ${seller.accessToken}` },
+      payload: { reasonCode: "seller_logistics" }
+    });
+    expect(requestResponse.statusCode).toBe(200);
+
+    const buyerRefundResponse = await app.inject({
+      method: "PATCH",
+      url: `/v1/deals/${dealId}/status`,
+      headers: { authorization: `Bearer ${buyer.accessToken}` },
+      payload: { status: "refunded", refundConfirmed: true, reasonCode: "buyer_request" }
+    });
+    expect(buyerRefundResponse.statusCode).toBe(409);
+    expect(buyerRefundResponse.json()).toMatchObject({ code: "deal_cancellation_requires_refund" });
+
+    const adminWithoutConfirmation = await app.inject({
+      method: "PATCH",
+      url: `/v1/deals/${dealId}/status`,
+      headers: { authorization: `Bearer ${admin.accessToken}` },
+      payload: { status: "refunded", reasonCode: "admin_resolution" }
+    });
+    expect(adminWithoutConfirmation.statusCode).toBe(409);
+    expect(adminWithoutConfirmation.json()).toMatchObject({ code: "deal_cancellation_requires_refund" });
+
+    const adminWithConfirmation = await app.inject({
+      method: "PATCH",
+      url: `/v1/deals/${dealId}/status`,
+      headers: { authorization: `Bearer ${admin.accessToken}` },
+      payload: {
+        status: "refunded",
+        refundConfirmed: true,
+        reasonCode: "admin_resolution"
+      }
+    });
+    expect(adminWithConfirmation.statusCode).toBe(200);
+    expect(adminWithConfirmation.json().deal).toMatchObject({ status: "refunded" });
+
+    const refundAudit = dbClient.sqlite
+      .prepare(
+        `
+          SELECT event_type, reason_code
+          FROM audit_events
+          WHERE event_type = 'deal_refund_confirmed'
+          ORDER BY created_at DESC
+          LIMIT 1
+        `
+      )
+      .get() as { event_type: string; reason_code: string } | undefined;
+    expect(refundAudit).toMatchObject({
+      event_type: "deal_refund_confirmed",
+      reason_code: "admin_resolution"
+    });
+
+    await app.close();
+  });
+
   it("rate limits offer submissions with explicit auth error code", async () => {
     const smsProvider = new TestSmsProvider();
     const dbClient = createDatabaseClient(":memory:");

@@ -1,5 +1,6 @@
 import type { Database } from "better-sqlite3";
 import type {
+  AuthRole,
   Deal,
   DealStatus,
   ListingStatus,
@@ -289,22 +290,97 @@ export class SqliteDealDomainService implements DealDomainService {
 
   updateDealStatus(params: {
     userId: string;
+    userRole: "buyer" | "seller" | "admin";
     dealId: string;
-    status: "paid" | "completed" | "canceled";
+    status: "paid" | "cancellation_requested" | "completed" | "canceled" | "refunded";
+    reasonCode?: string;
+    refundConfirmed?: boolean;
   }): Deal {
     const timestamp = this.now();
-    const tx = this.sqlite.transaction((userId: string, dealId: string, nextStatus: DealStatus): Deal => {
+    const tx = this.sqlite.transaction(
+      (
+        userId: string,
+        userRole: AuthRole,
+        dealId: string,
+        nextStatus: DealStatus,
+        refundConfirmed: boolean
+      ): Deal => {
+        const context = this.getDealParticipantContext(dealId);
+        if (!context) {
+          throw new AuthError("deal_not_found", "Deal was not found", 404);
+        }
+        this.assertUserCanAccessDeal(context, userId, userRole);
+        this.assertRoleBasedStatusTransition(context, userId, userRole, nextStatus, refundConfirmed);
+
+        if (context.status !== nextStatus) {
+          this.sqlite
+            .prepare("UPDATE deals SET status = ?, updated_at = ? WHERE id = ?")
+            .run(nextStatus, timestamp, dealId);
+        }
+
+        const updated = this.getDealById(dealId);
+        if (!updated) {
+          throw new AuthError("deal_not_found", "Deal was not found", 404);
+        }
+        return toDeal(updated);
+      }
+    );
+
+    return tx(
+      params.userId,
+      params.userRole,
+      params.dealId,
+      params.status,
+      params.refundConfirmed === true
+    );
+  }
+
+  requestCancellation(params: {
+    userId: string;
+    userRole: "buyer" | "seller" | "admin";
+    dealId: string;
+  }): Deal {
+    const timestamp = this.now();
+    const tx = this.sqlite.transaction((userId: string, userRole: AuthRole, dealId: string): Deal => {
       const context = this.getDealParticipantContext(dealId);
       if (!context) {
         throw new AuthError("deal_not_found", "Deal was not found", 404);
       }
-      this.assertUserCanAccessDeal(context, userId);
-      this.assertDealStatusTransitionAllowed(context.status, nextStatus);
+      this.assertUserCanAccessDeal(context, userId, userRole);
 
-      if (context.status !== nextStatus) {
+      if (userRole === "buyer") {
+        throw new AuthError(
+          "deal_cancellation_not_allowed",
+          "Buyer cannot request cancellation for this deal",
+          403
+        );
+      }
+      if (userRole === "seller" && context.seller_user_id !== userId) {
+        throw new AuthError(
+          "deal_cancellation_not_allowed",
+          "Only the seller can request cancellation",
+          403
+        );
+      }
+      if (context.status === "completed" || context.status === "canceled" || context.status === "refunded") {
+        throw new AuthError(
+          "deal_cancellation_not_allowed",
+          "Cancellation is not allowed for this deal",
+          409
+        );
+      }
+
+      if (context.status !== "cancellation_requested") {
+        if (context.status !== "open" && context.status !== "paid") {
+          throw new AuthError(
+            "deal_cancellation_not_allowed",
+            "Cancellation can only be requested for open or paid deals",
+            409
+          );
+        }
         this.sqlite
-          .prepare("UPDATE deals SET status = ?, updated_at = ? WHERE id = ?")
-          .run(nextStatus, timestamp, dealId);
+          .prepare("UPDATE deals SET status = 'cancellation_requested', updated_at = ? WHERE id = ?")
+          .run(timestamp, dealId);
       }
 
       const updated = this.getDealById(dealId);
@@ -314,7 +390,7 @@ export class SqliteDealDomainService implements DealDomainService {
       return toDeal(updated);
     });
 
-    return tx(params.userId, params.dealId, params.status);
+    return tx(params.userId, params.userRole, params.dealId);
   }
 
   private assertListingOwnedBySeller(listingId: string, sellerUserId: string): void {
@@ -519,8 +595,8 @@ export class SqliteDealDomainService implements DealDomainService {
       .get(dealId) as DealParticipantRow | undefined;
   }
 
-  private assertUserCanAccessDeal(deal: DealParticipantRow, userId: string): void {
-    if (deal.seller_user_id !== userId && deal.buyer_user_id !== userId) {
+  private assertUserCanAccessDeal(deal: DealParticipantRow, userId: string, userRole: AuthRole): void {
+    if (userRole !== "admin" && deal.seller_user_id !== userId && deal.buyer_user_id !== userId) {
       throw new AuthError("forbidden_owner_mismatch", "Deal does not belong to user", 403);
     }
     const actorTenantId = this.resolveUserTenantId(userId);
@@ -530,12 +606,105 @@ export class SqliteDealDomainService implements DealDomainService {
     requireTenantScope(deal.tenant_id, actorTenantId);
   }
 
-  private assertDealStatusTransitionAllowed(current: DealStatus, next: DealStatus): void {
-    if (current === next) {
+  private assertRoleBasedStatusTransition(
+    deal: DealParticipantRow,
+    actorUserId: string,
+    actorRole: AuthRole,
+    nextStatus: DealStatus,
+    refundConfirmed: boolean
+  ): void {
+    if (deal.status === nextStatus) {
       return;
     }
-    if (!isDealStatusTransitionAllowed(current, next)) {
+
+    if (!isDealStatusTransitionAllowed(deal.status, nextStatus)) {
       throw new AuthError("deal_invalid_status_transition", "Deal status transition is not allowed", 409);
+    }
+
+    if (deal.status === "paid" && nextStatus === "canceled") {
+      throw new AuthError(
+        "deal_cancellation_requires_refund",
+        "Paid cancellation requires refund confirmation",
+        409
+      );
+    }
+
+    if (nextStatus === "cancellation_requested") {
+      if (actorRole !== "seller" && actorRole !== "admin") {
+        throw new AuthError(
+          "deal_cancellation_not_allowed",
+          "Only seller or admin can request cancellation",
+          403
+        );
+      }
+      if (actorRole === "seller" && deal.seller_user_id !== actorUserId) {
+        throw new AuthError(
+          "deal_cancellation_not_allowed",
+          "Only the seller can request cancellation",
+          403
+        );
+      }
+      return;
+    }
+
+    if (nextStatus === "canceled") {
+      if (deal.status !== "cancellation_requested") {
+        throw new AuthError(
+          "deal_cancellation_not_allowed",
+          "Deal must be in cancellation_requested before cancellation resolution",
+          409
+        );
+      }
+      if (actorRole !== "buyer" && actorRole !== "admin") {
+        throw new AuthError(
+          "deal_cancellation_not_allowed",
+          "Only buyer or admin can resolve cancellation",
+          403
+        );
+      }
+      return;
+    }
+
+    if (nextStatus === "refunded") {
+      if (deal.status !== "paid" && deal.status !== "cancellation_requested") {
+        throw new AuthError("deal_invalid_status_transition", "Deal status transition is not allowed", 409);
+      }
+      if (actorRole !== "admin") {
+        throw new AuthError(
+          "deal_cancellation_requires_refund",
+          "Admin refund confirmation is required",
+          409
+        );
+      }
+      if (!refundConfirmed) {
+        throw new AuthError(
+          "deal_cancellation_requires_refund",
+          "Refund confirmation is required",
+          409
+        );
+      }
+      return;
+    }
+
+    if (nextStatus === "completed") {
+      if (actorRole !== "seller" && actorRole !== "admin") {
+        throw new AuthError(
+          "deal_invalid_status_transition",
+          "Only seller or admin can mark deal completed",
+          403
+        );
+      }
+      return;
+    }
+
+    if (nextStatus === "paid") {
+      if (actorRole !== "buyer" && actorRole !== "admin") {
+        throw new AuthError(
+          "deal_invalid_status_transition",
+          "Only buyer or admin can mark deal paid",
+          403
+        );
+      }
     }
   }
 
