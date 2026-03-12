@@ -1,20 +1,44 @@
-import { useCallback, useRef, useState } from "react";
-import { ActivityIndicator, Dimensions, Modal, Pressable, StyleSheet, Text, View, type ViewToken } from "react-native";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  ActivityIndicator,
+  Dimensions,
+  Image,
+  Modal,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  View,
+  type ViewToken
+} from "react-native";
 import { FlashList } from "@shopify/flash-list";
 import { ReelItem } from "../components/ReelItem";
+import { AnnouncementFeedCard } from "../components/AnnouncementFeedCard";
 import { UploadFlow } from "../components/UploadFlow";
 import { NotificationsSheet } from "../components/NotificationsSheet";
-import { useReelsFeed } from "../hooks/useReelsFeed";
+import { type FeedEntry, buildFeedEntries, buildStoryRings, useReelsFeed } from "../hooks/useReelsFeed";
 import { useVideoPrefetch } from "../hooks/useVideoPrefetch";
 
 const { height } = Dimensions.get("window");
 
 export function ReelsScreen() {
   const [activeIndex, setActiveIndex] = useState(0);
+  const [seenAuthors, setSeenAuthors] = useState<Set<string>>(new Set());
   const [uploadOpen, setUploadOpen] = useState(false);
   const [notificationsOpen, setNotificationsOpen] = useState(false);
-  const { items, loading, error, refresh } = useReelsFeed();
-  useVideoPrefetch(items, activeIndex);
+  const { items, announcements, loading, error, refresh } = useReelsFeed();
+  const feedEntries = useMemo(() => buildFeedEntries(items, announcements), [announcements, items]);
+  const activeReelIndex = useMemo(() => {
+    if (feedEntries.length === 0) {
+      return 0;
+    }
+    const visibleEntries = feedEntries.slice(0, Math.max(activeIndex + 1, 1));
+    const index = visibleEntries.filter((entry) => entry.kind === "reel").length - 1;
+    return index < 0 ? 0 : Math.min(index, Math.max(items.length - 1, 0));
+  }, [activeIndex, feedEntries, items.length]);
+  const storyRings = useMemo(() => buildStoryRings(items, seenAuthors), [items, seenAuthors]);
+
+  useVideoPrefetch(items, activeReelIndex);
 
   const onViewableItemsChanged = useRef(
     ({ viewableItems }: { viewableItems: Array<ViewToken> }) => {
@@ -26,11 +50,29 @@ export function ReelsScreen() {
   );
 
   const renderItem = useCallback(
-    ({ item, index }: { item: (typeof items)[number]; index: number }) => (
-      <ReelItem item={item} active={index === activeIndex} itemIndex={index} />
-    ),
-    [activeIndex, items]
+    ({ item, index }: { item: FeedEntry; index: number }) => {
+      if (item.kind === "announcement") {
+        return <AnnouncementFeedCard announcement={item.announcement} itemIndex={index} />;
+      }
+      return <ReelItem item={item.reel} active={index === activeIndex} itemIndex={index} />;
+    },
+    [activeIndex, feedEntries]
   );
+
+  useEffect(() => {
+    const entry = feedEntries[activeIndex];
+    if (!entry || entry.kind !== "reel") {
+      return;
+    }
+    setSeenAuthors((current) => {
+      if (current.has(entry.reel.author)) {
+        return current;
+      }
+      const next = new Set(current);
+      next.add(entry.reel.author);
+      return next;
+    });
+  }, [activeIndex, feedEntries]);
 
   if (loading) {
     return (
@@ -44,7 +86,7 @@ export function ReelsScreen() {
   return (
     <View style={styles.root} testID="reels-screen">
       <FlashList
-        data={items}
+        data={feedEntries}
         renderItem={renderItem}
         pagingEnabled
         snapToInterval={height}
@@ -55,6 +97,25 @@ export function ReelsScreen() {
         keyExtractor={(item) => item.id}
         testID="reels-feed"
       />
+      <View style={styles.storyStripWrap}>
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.storyStrip}>
+          {storyRings.map((ring) => (
+            <View key={ring.author} style={styles.storyRing} testID={`story-ring-${ring.author}`}>
+              <View
+                style={[
+                  styles.storyRingBorder,
+                  ring.isUnseen ? styles.storyRingBorderUnseen : styles.storyRingBorderSeen
+                ]}
+              >
+                <Image source={{ uri: ring.posterUrl }} style={styles.storyImage} />
+              </View>
+              <Text style={styles.storyText} numberOfLines={1}>
+                @{ring.author}
+              </Text>
+            </View>
+          ))}
+        </ScrollView>
+      </View>
       <View style={styles.topMeta}>
         <Text style={styles.metaText}>{error ? `Offline fallback: ${error}` : "Live feed"}</Text>
       </View>
@@ -117,7 +178,7 @@ const styles = StyleSheet.create({
   },
   topMeta: {
     position: "absolute",
-    top: 60,
+    top: 124,
     alignSelf: "center",
     backgroundColor: "rgba(0,0,0,0.35)",
     paddingHorizontal: 12,
@@ -126,6 +187,45 @@ const styles = StyleSheet.create({
   },
   metaText: {
     color: "#ececec"
+  },
+  storyStripWrap: {
+    position: "absolute",
+    top: 54,
+    left: 0,
+    right: 0
+  },
+  storyStrip: {
+    paddingHorizontal: 12,
+    gap: 10
+  },
+  storyRing: {
+    width: 78,
+    alignItems: "center",
+    gap: 6
+  },
+  storyRingBorder: {
+    width: 62,
+    height: 62,
+    borderRadius: 999,
+    borderWidth: 2,
+    padding: 2
+  },
+  storyRingBorderUnseen: {
+    borderColor: "#f7d6a0"
+  },
+  storyRingBorderSeen: {
+    borderColor: "rgba(255,255,255,0.3)"
+  },
+  storyImage: {
+    width: "100%",
+    height: "100%",
+    borderRadius: 999
+  },
+  storyText: {
+    color: "#f1f1f1",
+    fontSize: 11,
+    width: "100%",
+    textAlign: "center"
   },
   uploadButton: {
     position: "absolute",
