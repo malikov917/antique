@@ -53,11 +53,12 @@ This document defines stable backend module boundaries so implementation agents 
   - `DealDomainService`
   - `ChatDomainService`
 - Marketplace service implementations:
-  - `MarketplaceService`: sessions, listing CRUD, basket, offer submit.
+  - `SqliteMarketSessionDomainService`: market session open/close lifecycle.
+  - `SqliteListingMutationDomainService`: listing CRUD, basket creation, offer submit.
   - `SqliteDealDomainService`: seller offer decisions, deal reads/status updates.
   - `SqliteChatDomainService`: chat list/read/write for deal participants.
-- Planned placeholder for upcoming extraction:
-  - `NotificationDomainService`
+  - `MarketplaceService`: payment-overdue sweep + metrics.
+  - Planned placeholder for upcoming extraction: `NotificationDomainService`
 
 ## Invariants
 
