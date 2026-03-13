@@ -22,6 +22,8 @@ import { AuthService, type SmsProvider } from "./services/authService.js";
 import { LoggingSmsProvider } from "./services/smsProvider.js";
 import { SellerApplicationService } from "./services/sellerApplicationService.js";
 import { MarketplaceService } from "./services/marketplaceService.js";
+import { SqliteMarketSessionDomainService } from "./services/marketplace/sessionDomainService.js";
+import { SqliteListingMutationDomainService } from "./services/marketplace/listingMutationDomainService.js";
 import { SqliteDealDomainService } from "./services/dealDomainService.js";
 import { SqliteChatDomainService } from "./services/chatDomainService.js";
 import { SellerSalesService } from "./services/sellerSalesService.js";
@@ -81,6 +83,14 @@ export async function buildServer(params: BuildServerParams): Promise<FastifyIns
     params.now
   );
   const sellerApplicationService = new SellerApplicationService(dbClient.sqlite, params.now);
+  const marketSessionService = new SqliteMarketSessionDomainService(dbClient.sqlite, params.now);
+  const listingMutationService = new SqliteListingMutationDomainService(
+    dbClient.sqlite,
+    {
+      offerSubmitPerUserPerHour: params.config.offerSubmitPerUserPerHour,
+    },
+    params.now
+  );
   const marketplaceService = new MarketplaceService(
     dbClient.sqlite,
     {
@@ -215,8 +225,8 @@ export async function buildServer(params: BuildServerParams): Promise<FastifyIns
   });
   await registerMarketplaceRoutes(app, {
     authService,
-    marketSessionService: marketplaceService,
-    listingMutationService: marketplaceService,
+    marketSessionService,
+    listingMutationService,
     dealService,
     chatService,
     notificationService
