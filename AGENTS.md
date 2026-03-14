@@ -29,8 +29,10 @@ Attach output summary in the Linear issue comment.
 - During fix iteration, run `SKIP_CHECK=1` e2e loops after a full gate pass; keep final reporting based on a full validation run.
 
 ## Local App Run Reliability
-- For iOS manual testing, boot simulator first (`xcrun simctl boot "<device>"` + `xcrun simctl bootstatus -b`) and then launch Simulator.
+- For iOS manual testing, boot simulator first (`xcrun simctl boot "<device>"` + `xcrun simctl bootstatus -b`), then launch Simulator, then start Expo and trigger iOS launch (`i`).
 - Start backend and mobile dev servers in separate long-lived terminals so API and Expo logs stay visible during manual testing.
+- Before starting new dev processes, preflight ports: check `4000` (API) and `8081` (Expo) with `lsof`; if occupied, verify owner/health and either reuse intentionally or stop it before launching duplicates.
+- If API port `4000` is already in use, verify `curl http://127.0.0.1:4000/health` before declaring backend down.
 - If upload endpoints return `503` locally, verify Mux credentials are loaded from `apps/api/.env` or repository root `.env` before retrying.
 
 ## Continuous Improvement Rule

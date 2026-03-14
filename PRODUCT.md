@@ -1,6 +1,6 @@
 # Antique Product Specification (v2)
 
-Last updated: March 12, 2026
+Last updated: March 14, 2026
 Owner: Product + Engineering (Linear team: Antique)
 Source of truth for delivery: Linear issues mapped to this spec
 
@@ -55,7 +55,13 @@ Implemented today:
 11. SQLite persistence for marketplace entities (sessions, listings, basket, offers, deals, chats, notifications, announcements, sales, audit events) with tenant-scoped guards.
 
 Remaining gaps:
-1. No active MVP behavior gap is currently tracked as unimplemented in this spec; follow-on enhancements should be added as new Linear tickets before implementation.
+1. Seeded beta credentials role mapping regression: seeded `Admin` phone is currently treated as buyer-only and cannot access admin capabilities.
+2. OTP flow rate-limit behavior needs tuning: users can hit `Too many requests` unexpectedly during normal login retries.
+3. Bottom tab navigation icons are missing on mobile; tabs currently rely on text-only affordances.
+4. Role management UX/policy realignment:
+1. No public role-pick register flow.
+2. Non-admin users should not see role/status update controls.
+3. Admin role assignment should be owner-managed via DB allowlist.
 
 ## 4) Personas and Roles
 
@@ -70,9 +76,11 @@ Roles:
 3. `admin`
 
 Account policy:
-1. One account can act as buyer and seller.
-2. Signup default role is buyer.
-3. Seller actions require seller approval.
+1. Signup/login default role is buyer for all non-admin phone numbers.
+2. Admin accounts are defined by explicit phone-number allowlist controlled by the product owner.
+3. Only allowlisted admins can switch active role (`buyer`/`seller`/`admin`) at any time.
+4. Non-admin users must not see role switching or role status mutation controls.
+5. Seller/admin capability for non-admin numbers is managed by direct admin database updates.
 
 ## 5) Identity and Access
 
@@ -113,14 +121,12 @@ Rules:
 3. shared: chat/profile/notification center with ownership checks.
 4. Write operations keep audit fields: `createdByUserId`, `updatedByUserId`.
 
-### 5.4 Seller onboarding and approval
-Seller application states:
-- `not_requested` -> `pending` -> `approved` or `rejected`
-
+### 5.4 Seller capability assignment (admin-managed)
 Rules:
-1. Buyer can apply for seller role by submitting seller profile details.
-2. Until approved, seller features are hidden/disabled.
-3. Initial launch uses admin-only approval and activation.
+1. Self-serve seller registration/apply flow is out of scope for beta and production baseline.
+2. Seller capability is granted/revoked only by admin owner operations (DB-backed allowlist/role updates).
+3. Non-admin users remain buyer-only and cannot mutate their own role/status.
+4. Role mutation UI controls are visible only for allowlisted admin accounts.
 
 ## 6) Core Domain Objects
 
@@ -151,6 +157,7 @@ Primary tab navigation:
 2. `Inbox`
 3. `Activity`
 4. `Profile`
+5. Every bottom tab shows both icon and label; missing icons are a release-blocking UX bug.
 
 Feed:
 1. Story-style seller rings showing unseen updates.
@@ -353,7 +360,7 @@ E2E tests:
 3. Day close behavior and notifications.
 4. For failures/stalls, capture screenshot + relevant logs before reporting blocker.
 
-### 13.1 Current UX/E2E quality gaps (observed on March 12, 2026)
+### 13.1 Current UX/E2E quality gaps (observed on March 14, 2026)
 These are implementation quality gaps observed during role-based iOS walkthroughs with seeded data:
 
 1. Feed source is still decoupled from marketplace domain:
@@ -365,6 +372,13 @@ These are implementation quality gaps observed during role-based iOS walkthrough
 3. Workflow depth in mobile UI remains limited:
 1. Inbox currently shows deal summary cards but no dedicated threaded chat detail screen in tab flow.
 2. Activity is event-list only; lacks filtering/grouping for buyer vs seller operations.
+4. Role/access behavior mismatches for seeded beta users:
+1. Seeded admin phone currently lands as buyer-only.
+2. Non-admin users still encounter role mutation affordances in places where they should be hidden.
+5. OTP login reliability:
+1. `Too many requests` appears during normal manual testing cadence and should be recalibrated.
+6. Bottom tab navigation affordance gap:
+1. Missing tab icons reduce discoverability and fail expected mobile navigation patterns.
 
 ### 13.2 Beta UI-first priorities (replanned on March 12, 2026)
 For current beta, prioritize visual quality and flow clarity before deeper security/infra hardening:
@@ -374,10 +388,12 @@ For current beta, prioritize visual quality and flow clarity before deeper secur
 2. App tabs are visible only after login.
 2. Role clarity in UI:
 1. Buyer cannot see seller-only actions such as upload.
-2. Seller-only actions are visible only in seller role.
+2. Seller/admin-only actions are visible only when active admin-managed role allows them.
+3. Non-admin users cannot self-upgrade role and never see role-switch controls.
 3. Profile simplification:
 1. Profile focuses on user account data and role/application controls.
 2. Login/register lives on dedicated auth screen, not inside Profile.
+3. Replace self-serve role application controls with admin-managed informational state only.
 4. Visual finishing pass:
 1. Safe-area and spacing fixes on Feed/Inbox/Activity/Profile.
 2. Copy cleanup for unclear labels (for example, ambiguous `Updates` button naming).
@@ -402,9 +418,10 @@ Delivery gate before moving ticket to `In Review`:
 
 ## 15) Defaults and Assumptions
 
-1. One account can hold both buyer and seller capabilities.
+1. Non-admin accounts are buyer-only by default.
 2. Buyer role is default on signup.
-3. Seller role requires approval.
+3. Admin accounts are controlled by phone-number allowlist set directly in the database.
+4. Only admins can switch active role; non-admin role/status mutation is not exposed in mobile UI.
 4. Listed price is minimum allowed offer.
 5. One listing equals one unique product.
 6. Chat is per-product for accepted offers.

@@ -15,11 +15,17 @@ These users are deterministic and re-seeded by `scripts/run-ios-role-screen-audi
   - `state/runs/ios-role-screen-audit/<timestamp>/tokens.env`
 
 ## OTP in local beta
-The local API uses a logging SMS provider. OTP codes are written to API logs with `OTP issued`.
-
-Example (latest run log):
+1. Tap `Send code` in the app.
+2. Run:
 ```bash
-rg -n 'OTP issued|phoneE164' state/runs/ios-role-screen-audit/*/logs/api.log | tail -n 50
+./scripts/get-latest-otp.sh
+```
+This prints the latest `otpCode` automatically (no tmux session name required).
+
+Fallback: list API tmux windows first, then inspect one manually.
+```bash
+tmux list-windows -a -F '#S:#I:#W' | rg ':api$'
+tmux capture-pane -p -t <session>:api -S -300 | rg 'OTP issued|otpCode' | tail -n 5
 ```
 
 ## Persistence
