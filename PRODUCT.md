@@ -24,7 +24,7 @@ Core principles:
 | Gallery video upload + Mux processing | Done | 2026-03-05 | ANT-26 |
 | Identity + auth (OTP, sessions, role claims) | Done | 2026-03-05 | ANT-28 |
 | `me` profile + role switch + auth route guards | Done | 2026-03-07 | ANT-31, ANT-50 |
-| Seller onboarding/approval | Done | 2026-03-06 | ANT-32, ANT-48 |
+| Seller onboarding/approval (legacy path in code; planned UI deprecation) | Done | 2026-03-06 | ANT-32, ANT-48 |
 | Market day session open/close | Done | 2026-03-06 | ANT-33 |
 | Listings + price floor + basket + offers | Done | 2026-03-07 | ANT-34, ANT-35 |
 | Manual winner selection + auto-decline others | Done | 2026-03-06 | ANT-36 |
@@ -33,6 +33,11 @@ Core principles:
 | Story rings + announcements + notifications | Done | 2026-03-12 | ANT-39, ANT-40, ANT-54, ANT-58 |
 | Abuse prevention + moderation + observability | Done | 2026-03-11 | ANT-41, ANT-42 |
 | Fulfillment edge-case workflows | Done | 2026-03-12 | ANT-44, ANT-60, ANT-61, ANT-62 |
+| Admin-only role governance (allowlist + hide non-admin role controls) | Planned | 2026-03-14 | TBD |
+| OTP throttling calibration for normal beta login retries | Planned | 2026-03-14 | TBD |
+| Bottom tab icons in mobile navigation | Planned | 2026-03-14 | TBD |
+| Seller one-tap payment info message in chat | Planned | 2026-03-14 | TBD |
+| Persistent inventory outside market day + `in_stock`/`out_of_stock` buyer hints | Planned | 2026-03-14 | TBD |
 
 Status keys:
 - `Done`: implemented and verified
@@ -45,7 +50,7 @@ Implemented today:
 1. Reels-first mobile experience with Feed/Inbox/Activity/Profile tabs, story rings, announcement cards, and freshness badges.
 2. Gallery upload with preparation fallback and API direct-upload lifecycle (`POST /v1/uploads`, `GET /v1/uploads/:uploadId`) plus Mux webhook readiness.
 3. Identity foundation: OTP request/verify, refresh/logout, `GET/PATCH /v1/me`, `POST /v1/me/role-switch`, route guards, role claims, and session persistence.
-4. Seller onboarding lifecycle: `GET /v1/seller/application`, `POST /v1/seller/apply`, admin approve/reject transitions, and audit logging.
+4. Seller onboarding lifecycle (legacy path currently still in backend): `GET /v1/seller/application`, `POST /v1/seller/apply`, admin approve/reject transitions, and audit logging.
 5. Market session and listing operations: open/close day session, listing create/update, basket submit, offers submit/accept/decline, single-winner enforcement, and day-close protections.
 6. Deal and fulfillment lifecycle: deals timeline/status transitions, cancellation request + refund resolution, non-payment timeout sweep, and address-correction request/approve/reject workflow.
 7. Chat and inbox operations: per-deal chat listing, message history, and message posting with participant authorization.
@@ -62,13 +67,32 @@ Remaining gaps:
 1. No public role-pick register flow.
 2. Non-admin users should not see role/status update controls.
 3. Admin role assignment should be owner-managed via DB allowlist.
+5. Seller chat productivity:
+1. Seller should have a saved payment/help template that can be inserted into chat with one tap.
+6. Listing lifecycle/persistence:
+1. Seller should be able to upload and maintain products outside an active market day.
+2. Buyers should always be able to view seller products, while buyability is controlled by explicit availability state.
+3. UI should display `In stock` / `Out of stock` status so buyers know whether purchase is still possible.
+
+### 3.1 Manual Test Requirement Matrix (March 14, 2026)
+
+| Requirement from manual test | Current state in repo | Status for delivery |
+| --- | --- | --- |
+| Seller can notify opening sales and buyers see post in feed | Market open triggers system announcement; announcements are rendered in feed/activity | Implemented (validate UX polish) |
+| Seller can close sales and buyers see post in feed | Market close triggers system announcement; feed/activity consume announcements | Implemented (validate UX polish) |
+| Seller can upload video and set price/description; update later if needed | Upload + listing create/update exists; `description` optional, `listedPriceCents` required on create | Partially implemented |
+| Buyer can apply/buy and both sides get chat to finalize | Buyer offer + seller accept flow creates per-deal chat for buyer/seller | Implemented |
+| Seller has one-click "how to pay / other info" message in chat | Generic chat exists; no one-tap payment-template insertion action | New requirement (Planned) |
+| Listings become unavailable for buy when seller is out of active market | Day close blocks new basket/offers and keeps listing visible | Implemented for market-day listings |
+| Seller can upload products outside active market day; posts persist and can be bought later; seller can update | Current create flow is tied to active market session; updates exist after creation | New requirement (Planned) |
+| Buyers see `In stock` / `Out of stock` hint on seller products | No explicit stock badge/state in contracts/UI | New requirement (Planned) |
 
 ## 4) Personas and Roles
 
 Personas:
 1. Seller: records antique items on market, uploads quickly, decides winner manually, handles payment/shipping offline.
 2. Buyer: watches recent reels, submits offer quickly, receives approve/decline result, chats with seller.
-3. Admin (initially internal): approves seller applications and can suspend seller capabilities.
+3. Admin (owner-controlled): manages allowlisted role-enabled numbers, can switch roles, and can suspend seller capabilities.
 
 Roles:
 1. `buyer`
@@ -114,7 +138,7 @@ Each authenticated request uses bearer token with claims:
 
 Rules:
 1. App stores and displays current `activeRole`.
-2. App calls explicit role switch endpoint to change mode.
+2. App only exposes explicit role switch endpoint for allowlisted admin accounts.
 3. API enforces route guards:
 1. seller-only: listing/session/offer decision/export/seller announcements,
 2. buyer-only: basket/offer submit,
@@ -162,7 +186,7 @@ Primary tab navigation:
 Feed:
 1. Story-style seller rings showing unseen updates.
 2. Latest-first reels from open market sessions.
-3. Announcement cards (day open/restock/last call/day closed).
+3. Announcement cards (day open/restock/last call/day closed) are inserted directly into feed stream.
 4. Listing CTA states: `Add to Basket`, `Offer Submitted`, `Day Closed`, `Sold`.
 
 Inbox:
@@ -174,8 +198,8 @@ Activity:
 
 Profile:
 1. Buyer profile editing (name, phone, addresses).
-2. Seller mode toggle (only if approved).
-3. Seller settings (shop profile, payout instructions template, fulfillment notes).
+2. Role controls visible only for allowlisted admins.
+3. Seller settings include payout instructions template and fulfillment notes.
 
 ## 8) End-to-End Workflows
 
@@ -185,12 +209,12 @@ Profile:
 3. Create session and default buyer profile.
 4. Optional email attachment later.
 
-### WF-2: Seller application
-1. Buyer opens seller application form.
-2. Submits seller details.
-3. Status becomes `pending`.
-4. Admin approves or rejects.
-5. On approval, seller mode is enabled.
+### WF-2: Admin-managed seller enablement
+1. User signs in as default buyer.
+2. Product owner/admin updates role allowlist in DB for selected phone numbers.
+3. Allowlisted admin account can switch active role.
+4. Non-admin users never see self-serve role upgrade controls.
+5. Legacy seller-application endpoints remain in backend but are planned for UI deprecation.
 
 ### WF-3: Seller opens market day
 1. Seller taps `Open Market Day`.
@@ -201,10 +225,12 @@ Profile:
 ### WF-4: Seller uploads listing from gallery
 1. Seller taps `Upload` (existing flow).
 2. Video uploads and becomes ready.
-3. Seller adds listing metadata and listed price.
-4. Listing becomes `live` under current open market session.
+3. Seller sets listing metadata (`description` supported today; price required on create today).
+4. Seller can update listing metadata later.
+5. Planned: allow draft creation and defer price-setting until publish.
+6. Listing becomes `live` under current open market session.
 
-### WF-5: Buyer basket and offer
+### WF-5: Buyer apply/buy flow
 1. Buyer adds listing to basket.
 2. Buyer enters offer amount.
 3. Validation ensures `offer >= listed price`.
@@ -220,9 +246,10 @@ Profile:
 
 ### WF-7: Offline payment and fulfillment
 1. Per-product chat opens for accepted buyer and seller.
-2. Seller shares bank details in chat.
-3. Deal progresses through payment and shipping statuses.
-4. Chat remains accessible after completion.
+2. Seller shares payment details in chat.
+3. Planned: one-tap insertion of seller payment/help template into chat composer.
+4. Deal progresses through payment and shipping statuses.
+5. Chat remains accessible after completion.
 
 ### WF-8: Close market day
 1. Seller taps `Close Market Day`.
@@ -236,6 +263,12 @@ Profile:
 2. Seller sees buyer name/address, product, accepted price, statuses.
 3. Seller exports CSV for fulfillment operations.
 
+### WF-10: Persistent inventory and stock visibility (planned)
+1. Seller can upload/save products even when no market session is open.
+2. Product video stays visible on seller page regardless of buy availability.
+3. Buy action depends on explicit stock/availability state (`In stock` vs `Out of stock`).
+4. Seller can update existing product metadata and availability state after publishing.
+
 ## 9) API Surface (planned, backward-compatible additions)
 
 Auth/identity:
@@ -246,8 +279,8 @@ Auth/identity:
 5. `GET /v1/me`
 6. `PATCH /v1/me`
 7. `POST /v1/me/role-switch`
-8. `POST /v1/seller/apply`
-9. `GET /v1/seller/application`
+8. `POST /v1/seller/apply` (legacy; planned UI deprecation)
+9. `GET /v1/seller/application` (legacy; planned UI deprecation)
 
 Marketplace and operations:
 1. `POST /v1/seller/sessions/open`
@@ -268,6 +301,9 @@ Marketplace and operations:
 16. `GET /v1/chats/:id/messages`
 17. `POST /v1/chats/:id/messages`
 18. Extend `GET /v1/feed` with listing/seller/session freshness fields while keeping existing fields unchanged.
+19. Planned: seller payment template endpoints for one-tap chat insertion.
+20. Planned: persistent inventory endpoints/state to support uploads outside active market sessions.
+21. Planned: explicit listing availability (`in_stock`/`out_of_stock`) in listing and feed contracts.
 
 ## 10) Shared Contract Additions (`packages/types`)
 
@@ -275,8 +311,9 @@ Add types:
 1. `AuthTokenSet`
 2. `AuthUser`
 3. `Role`
-4. `SellerApplicationStatus`
+4. `SellerApplicationStatus` (legacy flow; planned UI deprecation)
 5. `MarketSession`, `Listing`, `BasketItem`, `Offer`, `Deal`, `ChatThread`, `Message`, `Announcement`, `Notification`
+6. Planned additions: `ListingAvailabilityStatus`, `SellerPaymentTemplate`
 
 Add validation constants:
 1. `MIN_OFFER_RULE = offer >= listedPrice`
@@ -284,30 +321,23 @@ Add validation constants:
 
 ## 11) What Was Missed (must be addressed)
 
-1. Identity boundary and authorization design.
-2. Seller onboarding lifecycle and approval process.
-3. Abuse prevention baseline:
-1. OTP and offer rate limits,
-2. block/report user,
-3. seller suspension by admin.
-4. Data safety and compliance:
-1. PII handling for address data,
-2. retention policy,
-3. CSV access controls and export audit logs.
-5. Reliability controls:
-1. idempotent offer acceptance,
-2. optimistic locking on listing sale,
-3. notification retry/backoff.
-6. Observability:
-1. funnel metrics (view -> basket -> offer -> accepted -> paid),
-2. error dashboards,
-3. audit logs for seller decisions.
-7. Fulfillment edge cases:
-1. buyer non-payment timeout,
-2. seller cancellation path,
-3. address correction workflow.
-4. Research spec documented at `docs/fulfillment-edge-case-workflows.md` (ANT-44).
-8. Moderation rules for video and listing content quality.
+1. Role policy hardening:
+1. Enforce admin allowlist correctly for seeded/admin numbers.
+2. Remove/hide self-serve seller apply/role mutation UI for non-admin users.
+2. Auth reliability:
+1. Recalibrate OTP request/verify throttling to avoid false-positive `Too many requests` during normal testing/login.
+3. Navigation polish:
+1. Add bottom tab icons (Feed/Inbox/Activity/Profile) and keep safe-area compliant spacing.
+4. Seller-to-buyer conversion UX:
+1. Add one-tap payment/help template insertion in deal chat.
+5. Inventory model extension:
+1. Support listing creation outside active market day.
+2. Keep products visible even when unavailable for purchase.
+3. Add explicit `In stock` / `Out of stock` availability in API + mobile UI.
+6. Existing platform hardening that remains relevant:
+1. reliability controls (idempotent offer acceptance, optimistic locking),
+2. observability dashboards and audit completeness,
+3. moderation rules for video/listing quality.
 
 ## 12) Prioritized Delivery Roadmap
 
@@ -316,9 +346,10 @@ Add validation constants:
 
 ### P1 (identity foundation)
 1. OTP auth and refresh sessions. (Done: ANT-28, 2026-03-05)
-2. `me` profile endpoints and role switch.
-3. Seller apply + admin approval flow.
-4. Auth middleware and role guards.
+2. `me` profile endpoints and role switch. (Done)
+3. Auth middleware and role guards. (Done)
+4. Admin-only role governance enforcement + non-admin UI hardening. (Planned)
+5. Legacy seller-application flow deprecation from mobile UI. (Planned)
 
 ### P2 (sell-critical transaction core)
 1. Market day open/close.
@@ -339,13 +370,21 @@ Add validation constants:
 4. Moderation and abuse controls.
 5. Analytics and operational dashboards.
 
+### P5 (manual-test product alignment, March 14, 2026)
+1. OTP throttle calibration for real-world login cadence.
+2. Bottom tab icon pass and navigation affordance polish.
+3. One-tap seller payment-info message in chat.
+4. Persistent catalog outside market day.
+5. `In stock` / `Out of stock` status across API and mobile.
+
 ## 13) Testing and Acceptance Criteria
 
 Auth/access tests:
 1. OTP request/verify success and failure.
 2. Refresh token rotation and revoked token rejection.
 3. Route guard enforcement by role.
-4. Seller approval prerequisite for seller actions.
+4. Admin allowlist enforcement for role-switch visibility and execution.
+5. Non-admin user cannot self-promote role from mobile UI.
 
 Marketplace tests:
 1. Offer below floor is rejected.
@@ -356,9 +395,10 @@ Marketplace tests:
 
 E2E tests:
 1. New user -> buyer offer flow.
-2. Buyer -> seller application -> approval -> seller listing flow.
+2. Admin allowlisted user -> role switch -> seller listing flow.
 3. Day close behavior and notifications.
 4. For failures/stalls, capture screenshot + relevant logs before reporting blocker.
+5. Persistent inventory scenario (planned): upload outside market day, verify visibility and stock badge behavior.
 
 ### 13.1 Current UX/E2E quality gaps (observed on March 14, 2026)
 These are implementation quality gaps observed during role-based iOS walkthroughs with seeded data:
@@ -380,7 +420,7 @@ These are implementation quality gaps observed during role-based iOS walkthrough
 6. Bottom tab navigation affordance gap:
 1. Missing tab icons reduce discoverability and fail expected mobile navigation patterns.
 
-### 13.2 Beta UI-first priorities (replanned on March 12, 2026)
+### 13.2 Beta UI-first priorities (replanned on March 14, 2026)
 For current beta, prioritize visual quality and flow clarity before deeper security/infra hardening:
 
 1. Auth-first navigation:
@@ -391,13 +431,13 @@ For current beta, prioritize visual quality and flow clarity before deeper secur
 2. Seller/admin-only actions are visible only when active admin-managed role allows them.
 3. Non-admin users cannot self-upgrade role and never see role-switch controls.
 3. Profile simplification:
-1. Profile focuses on user account data and role/application controls.
+1. Profile focuses on user account data and admin-only role controls.
 2. Login/register lives on dedicated auth screen, not inside Profile.
-3. Replace self-serve role application controls with admin-managed informational state only.
+3. Remove self-serve seller application controls for non-admin users.
 4. Visual finishing pass:
 1. Safe-area and spacing fixes on Feed/Inbox/Activity/Profile.
 2. Copy cleanup for unclear labels (for example, ambiguous `Updates` button naming).
-3. Keep visual QA artifact-driven using role-by-role screenshots from iOS walkthroughs.
+3. Add bottom tab icons and keep visual QA artifact-driven using role-by-role screenshots from iOS walkthroughs.
 
 Delivery gate before moving ticket to `In Review`:
 1. `pnpm lint`
@@ -422,12 +462,13 @@ Delivery gate before moving ticket to `In Review`:
 2. Buyer role is default on signup.
 3. Admin accounts are controlled by phone-number allowlist set directly in the database.
 4. Only admins can switch active role; non-admin role/status mutation is not exposed in mobile UI.
-4. Listed price is minimum allowed offer.
-5. One listing equals one unique product.
-6. Chat is per-product for accepted offers.
-7. Payments are always handled offline/manual.
-8. Closed-day listings remain viewable but cannot receive new buying actions.
-9. Launch starts with one active seller, while architecture supports many sellers and many buyers.
+5. Listed price is minimum allowed offer.
+6. One listing equals one unique product.
+7. Chat is per-product for accepted offers.
+8. Payments are always handled offline/manual.
+9. Closed-day listings remain viewable but cannot receive new buying actions.
+10. Planned extension: persistent products can exist outside active market day with explicit stock state (`In stock` / `Out of stock`).
+11. Launch starts with one active seller, while architecture supports many sellers and many buyers.
 
 ## 16) Document Operating Rules
 
