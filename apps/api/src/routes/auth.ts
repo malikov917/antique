@@ -10,7 +10,6 @@ import { type AuthService } from "../services/authService.js";
 
 interface AuthRouteDeps {
   authService: AuthService;
-  otpRequestIpRateLimitMax: number;
   otpVerifyIpRateLimitMax: number;
 }
 
@@ -32,14 +31,6 @@ function assertObjectBody(payload: unknown): Record<string, unknown> {
 export async function registerAuthRoutes(app: FastifyInstance, deps: AuthRouteDeps): Promise<void> {
   app.post<{ Body: OtpRequestRequest }>(
     "/v1/auth/otp/request",
-    {
-      config: {
-        rateLimit: {
-          max: deps.otpRequestIpRateLimitMax,
-          timeWindow: "1 hour"
-        }
-      }
-    },
     async (request, reply) => {
       try {
         const body = assertObjectBody(request.body);

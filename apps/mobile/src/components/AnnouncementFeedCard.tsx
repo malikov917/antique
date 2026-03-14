@@ -1,9 +1,17 @@
-import { Dimensions, StyleSheet, Text, View } from "react-native";
+import { Dimensions, Pressable, StyleSheet, Text, View } from "react-native";
 import type { AnnouncementItem } from "@antique/types";
 
 const { height, width } = Dimensions.get("window");
 
-export function AnnouncementFeedCard({ announcement, itemIndex }: { announcement: AnnouncementItem; itemIndex: number }) {
+export function AnnouncementFeedCard({
+  announcement,
+  itemIndex,
+  onBackToTop
+}: {
+  announcement: AnnouncementItem;
+  itemIndex: number;
+  onBackToTop?: () => void;
+}) {
   return (
     <View style={styles.wrapper} testID={`announcement-item-${itemIndex}`}>
       <View style={styles.card}>
@@ -11,6 +19,11 @@ export function AnnouncementFeedCard({ announcement, itemIndex }: { announcement
         <Text style={styles.title}>{announcement.title}</Text>
         <Text style={styles.body}>{announcement.body}</Text>
         <Text style={styles.meta}>{new Date(announcement.createdAt).toLocaleString()}</Text>
+        {onBackToTop ? (
+          <Pressable style={styles.actionButton} onPress={onBackToTop} testID={`announcement-back-${itemIndex}`}>
+            <Text style={styles.actionButtonText}>Go to first reel</Text>
+          </Pressable>
+        ) : null}
       </View>
     </View>
   );
@@ -54,6 +67,21 @@ const styles = StyleSheet.create({
   },
   meta: {
     color: "#a5a5a5",
+    fontSize: 12
+  },
+  actionButton: {
+    marginTop: 4,
+    alignSelf: "flex-start",
+    borderRadius: 999,
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    borderWidth: 1,
+    borderColor: "#3c3c3c",
+    backgroundColor: "#1f1f1f"
+  },
+  actionButtonText: {
+    color: "#f5f5f5",
+    fontWeight: "700",
     fontSize: 12
   }
 });

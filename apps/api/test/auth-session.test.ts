@@ -57,13 +57,12 @@ describe("auth session api", () => {
     await app.close();
   });
 
-  it("rate limits OTP requests by phone", async () => {
+  it("allows repeated OTP requests when cooldown is satisfied", async () => {
     const smsProvider = new TestSmsProvider();
     let now = Date.now();
     const app = await buildServer({
       config: buildTestConfig({
-        authOtpCooldownSec: 1,
-        authOtpRequestPerPhonePerHour: 2
+        authOtpCooldownSec: 1
       }),
       smsProvider,
       muxClient: buildMockMuxClient(),
@@ -92,9 +91,9 @@ describe("auth session api", () => {
       url: "/v1/auth/otp/request",
       payload: { phone }
     });
-    expect(third.statusCode).toBe(429);
+    expect(third.statusCode).toBe(200);
     expect(third.json()).toMatchObject({
-      code: "otp_request_rate_limited"
+      status: "otp_sent"
     });
 
     await app.close();

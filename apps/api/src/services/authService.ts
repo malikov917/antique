@@ -78,7 +78,6 @@ export interface AuthRuntimeConfig {
   authOtpTtlSec: number;
   authOtpMaxAttempts: number;
   authOtpCooldownSec: number;
-  authOtpRequestPerPhonePerHour: number;
   authOtpVerifyPerPhoneIpPerHour: number;
 }
 
@@ -206,27 +205,6 @@ export class AuthService {
   async requestOtp(input: RequestOtpInput): Promise<OtpRequestResponse> {
     const phoneE164 = normalizePhoneNumber(input.phone);
     const now = this.now();
-    const hourAgo = now - 60 * 60 * 1000;
-
-    const perPhoneCountRow = this.sqlite
-      .prepare(
-        `
-          SELECT COUNT(1) as count
-          FROM otp_challenges
-          WHERE phone_e164 = ? AND created_at >= ?
-        `
-      )
-      .get(phoneE164, hourAgo) as { count: number } | undefined;
-
-    const perPhoneCount = Number(perPhoneCountRow?.count ?? 0);
-    if (perPhoneCount >= this.config.authOtpRequestPerPhonePerHour) {
-      throw new AuthError(
-        "otp_request_rate_limited",
-        "OTP request rate limit exceeded",
-        429,
-        this.config.authOtpCooldownSec
-      );
-    }
 
     const activeChallenge = this.sqlite
       .prepare(

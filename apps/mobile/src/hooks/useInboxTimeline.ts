@@ -7,6 +7,7 @@ const POLL_INTERVAL_MS = 12000;
 export interface InboxItem {
   chat: Chat;
   deal: Deal | null;
+  messages: ChatMessage[];
   latestMessage: ChatMessage | null;
   perspective: "buyer" | "seller";
   updatedAt: string;
@@ -24,6 +25,7 @@ export function useInboxTimeline(accessToken?: string): InboxTimelineState {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [refreshTick, setRefreshTick] = useState(0);
+  const [hasLoadedOnce, setHasLoadedOnce] = useState(false);
 
   useEffect(() => {
     const abortController = new AbortController();
@@ -36,10 +38,14 @@ export function useInboxTimeline(accessToken?: string): InboxTimelineState {
 
     const fetchData = async () => {
       try {
-        setLoading(true);
+        if (!hasLoadedOnce) {
+          setLoading(true);
+        }
         if (!headers) {
           setItems([]);
           setError("Set EXPO_PUBLIC_ACCESS_TOKEN to load inbox timeline.");
+          setHasLoadedOnce(true);
+          setLoading(false);
           return;
         }
 
@@ -85,17 +91,18 @@ export function useInboxTimeline(accessToken?: string): InboxTimelineState {
               }
             }
 
-            return { chat, latestMessage };
+            return { chat, messages, latestMessage };
           })
         );
 
         const nextItems = chatMessagePairs
-          .map(({ chat, latestMessage }) => {
+          .map(({ chat, messages, latestMessage }) => {
             const deal = dealsById.get(chat.dealId) ?? null;
             const perspective = mePayload.user.id === chat.sellerUserId ? "seller" : "buyer";
             return {
               chat,
               deal,
+              messages,
               latestMessage,
               perspective,
               updatedAt: latestMessage?.createdAt ?? chat.updatedAt
@@ -105,13 +112,17 @@ export function useInboxTimeline(accessToken?: string): InboxTimelineState {
 
         setItems(nextItems);
         setError(null);
+        setHasLoadedOnce(true);
       } catch (fetchError) {
         if (!abortController.signal.aborted) {
           setError(fetchError instanceof Error ? fetchError.message : "Failed to load inbox timeline");
+          setHasLoadedOnce(true);
         }
       } finally {
         if (!abortController.signal.aborted) {
-          setLoading(false);
+          if (!hasLoadedOnce) {
+            setLoading(false);
+          }
         }
       }
     };
@@ -125,7 +136,7 @@ export function useInboxTimeline(accessToken?: string): InboxTimelineState {
       clearInterval(intervalId);
       abortController.abort();
     };
-  }, [accessToken, refreshTick]);
+  }, [accessToken, refreshTick, hasLoadedOnce]);
 
   return useMemo(
     () => ({

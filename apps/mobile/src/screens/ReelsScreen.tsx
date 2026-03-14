@@ -11,11 +11,9 @@ import {
   View,
   type ViewToken
 } from "react-native";
-import { FlashList } from "@shopify/flash-list";
+import { FlashList, type FlashListRef } from "@shopify/flash-list";
 import { ReelItem } from "../components/ReelItem";
-import { AnnouncementFeedCard } from "../components/AnnouncementFeedCard";
 import { UploadFlow } from "../components/UploadFlow";
-import { NotificationsSheet } from "../components/NotificationsSheet";
 import { type FeedEntry, buildFeedEntries, buildStoryRings, useReelsFeed } from "../hooks/useReelsFeed";
 import { useVideoPrefetch } from "../hooks/useVideoPrefetch";
 import { useAuthSession } from "../auth/session";
@@ -27,9 +25,12 @@ export function ReelsScreen() {
   const [activeIndex, setActiveIndex] = useState(0);
   const [seenAuthors, setSeenAuthors] = useState<Set<string>>(new Set());
   const [uploadOpen, setUploadOpen] = useState(false);
-  const [notificationsOpen, setNotificationsOpen] = useState(false);
+  const feedListRef = useRef<FlashListRef<FeedEntry>>(null);
   const { items, announcements, loading, error, refresh } = useReelsFeed(accessToken);
-  const feedEntries = useMemo(() => buildFeedEntries(items, announcements), [announcements, items]);
+  const feedEntries = useMemo(() => {
+    const entries = buildFeedEntries(items, announcements);
+    return entries.filter((entry) => entry.kind === "reel");
+  }, [announcements, items]);
   const activeReelIndex = useMemo(() => {
     if (feedEntries.length === 0) {
       return 0;
@@ -39,6 +40,26 @@ export function ReelsScreen() {
     return index < 0 ? 0 : Math.min(index, Math.max(items.length - 1, 0));
   }, [activeIndex, feedEntries, items.length]);
   const storyRings = useMemo(() => buildStoryRings(items, seenAuthors), [items, seenAuthors]);
+  const isAtEnd = feedEntries.length > 0 && activeIndex >= feedEntries.length - 1;
+  const marketAvailability = useMemo(() => {
+    const latestAnnouncement = announcements[0];
+    if (!latestAnnouncement) {
+      return { label: "Buying status unknown", tone: "neutral" as const };
+    }
+    if (
+      latestAnnouncement.eventType === "market_session_closed" ||
+      /market day closed/i.test(latestAnnouncement.title)
+    ) {
+      return { label: "Buying paused (market closed)", tone: "paused" as const };
+    }
+    if (
+      latestAnnouncement.eventType === "market_session_opened" ||
+      /market day opened|market opened/i.test(latestAnnouncement.title)
+    ) {
+      return { label: "Buying available now", tone: "open" as const };
+    }
+    return { label: "Check latest market update", tone: "neutral" as const };
+  }, [announcements]);
 
   useVideoPrefetch(items, activeReelIndex);
 
@@ -51,14 +72,15 @@ export function ReelsScreen() {
     }
   );
 
+  const scrollToTop = useCallback(() => {
+    feedListRef.current?.scrollToIndex({ index: 0, animated: true });
+  }, []);
+
   const renderItem = useCallback(
     ({ item, index }: { item: FeedEntry; index: number }) => {
-      if (item.kind === "announcement") {
-        return <AnnouncementFeedCard announcement={item.announcement} itemIndex={index} />;
-      }
-      return <ReelItem item={item.reel} active={index === activeIndex} itemIndex={index} />;
+      return item.kind === "reel" ? <ReelItem item={item.reel} active={index === activeIndex} itemIndex={index} /> : null;
     },
-    [activeIndex, feedEntries]
+    [activeIndex, scrollToTop]
   );
 
   useEffect(() => {
@@ -76,6 +98,16 @@ export function ReelsScreen() {
     });
   }, [activeIndex, feedEntries]);
 
+  useEffect(() => {
+    if (!isAtEnd) {
+      return;
+    }
+    const timer = setTimeout(() => {
+      scrollToTop();
+    }, 4500);
+    return () => clearTimeout(timer);
+  }, [isAtEnd, scrollToTop]);
+
   if (loading) {
     return (
       <View style={styles.centered} testID="reels-screen-loading">
@@ -88,6 +120,7 @@ export function ReelsScreen() {
   return (
     <View style={styles.root} testID="reels-screen">
       <FlashList
+        ref={feedListRef}
         data={feedEntries}
         renderItem={renderItem}
         pagingEnabled
@@ -118,18 +151,32 @@ export function ReelsScreen() {
           ))}
         </ScrollView>
       </View>
-      <View style={styles.topMeta}>
-        <Text style={styles.metaText}>{error ? `Offline fallback: ${error}` : "Live feed"}</Text>
-      </View>
-      <Pressable
-        testID="feed-updates-button"
-        accessibilityLabel="Feed updates"
-        accessibilityHint="Opens recent feed updates and notifications"
-        style={styles.notificationsButton}
-        onPress={() => setNotificationsOpen(true)}
+      {error ? (
+        <View style={styles.topMeta}>
+          <Text style={styles.metaText}>{`Offline fallback: ${error}`}</Text>
+        </View>
+      ) : null}
+      <View
+        style={[
+          styles.buyabilityPill,
+          marketAvailability.tone === "open"
+            ? styles.buyabilityOpen
+            : marketAvailability.tone === "paused"
+              ? styles.buyabilityPaused
+              : null
+        ]}
       >
-        <Text style={styles.notificationsButtonText}>Activity</Text>
-      </Pressable>
+        <Text style={styles.buyabilityText}>{marketAvailability.label}</Text>
+      </View>
+      {isAtEnd ? (
+        <Pressable
+          style={styles.backToTopButton}
+          onPress={scrollToTop}
+          testID="feed-back-to-top"
+        >
+          <Text style={styles.backToTopButtonText}>Back to top</Text>
+        </Pressable>
+      ) : null}
       {user?.activeRole === "seller" ? (
         <Pressable testID="upload-button" style={styles.uploadButton} onPress={() => setUploadOpen(true)}>
           <Text style={styles.uploadButtonText}>Upload</Text>
@@ -142,26 +189,14 @@ export function ReelsScreen() {
         onRequestClose={() => setUploadOpen(false)}
       >
         <Pressable style={styles.modalOverlay} onPress={() => setUploadOpen(false)}>
-          <Pressable testID="upload-sheet" style={styles.sheet} onPress={(event) => event.stopPropagation()}>
+          <View testID="upload-sheet" style={styles.sheet}>
             <UploadFlow
               onDone={() => {
                 setUploadOpen(false);
                 refresh();
               }}
             />
-          </Pressable>
-        </Pressable>
-      </Modal>
-      <Modal
-        animationType="slide"
-        transparent
-        visible={notificationsOpen}
-        onRequestClose={() => setNotificationsOpen(false)}
-      >
-        <Pressable style={styles.modalOverlay} onPress={() => setNotificationsOpen(false)}>
-          <Pressable testID="notifications-modal" style={styles.sheet} onPress={(event) => event.stopPropagation()}>
-            <NotificationsSheet />
-          </Pressable>
+          </View>
         </Pressable>
       </Modal>
     </View>
@@ -188,6 +223,30 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     paddingVertical: 8,
     borderRadius: 999
+  },
+  buyabilityPill: {
+    position: "absolute",
+    top: 164,
+    alignSelf: "center",
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: "#3a3a3a",
+    backgroundColor: "rgba(0,0,0,0.45)",
+    paddingHorizontal: 12,
+    paddingVertical: 7
+  },
+  buyabilityOpen: {
+    borderColor: "rgba(126, 205, 123, 0.9)",
+    backgroundColor: "rgba(33, 61, 31, 0.72)"
+  },
+  buyabilityPaused: {
+    borderColor: "rgba(255, 164, 127, 0.95)",
+    backgroundColor: "rgba(75, 42, 28, 0.72)"
+  },
+  buyabilityText: {
+    color: "#f1f1f1",
+    fontSize: 12,
+    fontWeight: "700"
   },
   metaText: {
     color: "#ececec"
@@ -244,19 +303,20 @@ const styles = StyleSheet.create({
     color: "#111111",
     fontWeight: "700"
   },
-  notificationsButton: {
+  backToTopButton: {
     position: "absolute",
-    left: 20,
-    bottom: 44,
-    backgroundColor: "rgba(255,255,255,0.15)",
+    right: 20,
+    top: 198,
     borderRadius: 999,
     borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.3)",
-    paddingHorizontal: 20,
-    paddingVertical: 12
+    borderColor: "rgba(255,255,255,0.35)",
+    backgroundColor: "rgba(0,0,0,0.45)",
+    paddingHorizontal: 14,
+    paddingVertical: 8
   },
-  notificationsButtonText: {
+  backToTopButtonText: {
     color: "#f2f2f2",
+    fontSize: 12,
     fontWeight: "700"
   },
   modalOverlay: {
@@ -268,6 +328,7 @@ const styles = StyleSheet.create({
     backgroundColor: "#151515",
     borderTopLeftRadius: 20,
     borderTopRightRadius: 20,
-    paddingBottom: 24
+    paddingBottom: 24,
+    maxHeight: "84%"
   }
 });

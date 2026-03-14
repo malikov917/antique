@@ -1,4 +1,6 @@
-import { ActivityIndicator, ScrollView, StyleSheet, Text, View } from "react-native";
+import { ActivityIndicator, FlatList, StyleSheet, Text, View } from "react-native";
+import { Pressable } from "react-native";
+import { useRouter } from "expo-router";
 import type { NotificationItem } from "@antique/types";
 import { useAuthSession } from "../auth/session";
 import { useNotifications } from "../hooks/useNotifications";
@@ -53,6 +55,7 @@ function toLabel(type: NotificationItem["type"]): string {
 }
 
 export function ActivityScreen() {
+  const router = useRouter();
   const { accessToken } = useAuthSession();
   const { notifications, announcements, loading, error } = useNotifications(accessToken);
 
@@ -85,25 +88,35 @@ export function ActivityScreen() {
   }
 
   return (
-    <ScrollView style={styles.root} contentContainerStyle={styles.content} testID="activity-screen">
-      <Text style={styles.heading}>Activity</Text>
-      {error ? <Text style={styles.errorText}>{error}</Text> : null}
-
-      {entries.length === 0 ? (
-        <Text style={styles.metaText}>No activity yet.</Text>
-      ) : (
-        entries.map((entry) => (
-          <View key={`${entry.kind}-${entry.id}`} style={styles.card}>
-            <View style={styles.row}>
-              <Text style={styles.cardTitle}>{entry.title}</Text>
-              <Text style={styles.badge}>{toLabel(entry.eventType)}</Text>
-            </View>
-            <Text style={styles.cardBody}>{entry.body}</Text>
-            <Text style={styles.cardMeta}>{new Date(entry.createdAt).toLocaleString()}</Text>
+    <FlatList
+      style={styles.root}
+      contentContainerStyle={styles.content}
+      testID="activity-screen"
+      data={entries}
+      keyExtractor={(item) => `${item.kind}-${item.id}`}
+      ListHeaderComponent={
+        <View style={styles.headerBlock}>
+          <View style={styles.headerRow}>
+            <Text style={styles.heading}>Activity</Text>
+            <Pressable style={styles.backButton} onPress={() => router.push("/(tabs)/feed")}>
+              <Text style={styles.backButtonText}>Back to Feed</Text>
+            </Pressable>
           </View>
-        ))
+          {error ? <Text style={styles.errorText}>{error}</Text> : null}
+          {entries.length === 0 ? <Text style={styles.metaText}>No activity yet.</Text> : null}
+        </View>
+      }
+      renderItem={({ item: entry }) => (
+        <View style={styles.card}>
+          <View style={styles.row}>
+            <Text style={styles.cardTitle}>{entry.title}</Text>
+            <Text style={styles.badge}>{toLabel(entry.eventType)}</Text>
+          </View>
+          <Text style={styles.cardBody}>{entry.body}</Text>
+          <Text style={styles.cardMeta}>{new Date(entry.createdAt).toLocaleString()}</Text>
+        </View>
       )}
-    </ScrollView>
+    />
   );
 }
 
@@ -118,6 +131,9 @@ const styles = StyleSheet.create({
     paddingBottom: 28,
     gap: 10
   },
+  headerBlock: {
+    gap: 10
+  },
   centered: {
     flex: 1,
     backgroundColor: "#070707",
@@ -129,6 +145,25 @@ const styles = StyleSheet.create({
     color: "#f5f5f5",
     fontSize: 22,
     fontWeight: "700"
+  },
+  headerRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    gap: 10
+  },
+  backButton: {
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: "#3a3a3a",
+    backgroundColor: "#1a1a1a",
+    paddingHorizontal: 12,
+    paddingVertical: 7
+  },
+  backButtonText: {
+    color: "#f2f2f2",
+    fontWeight: "700",
+    fontSize: 12
   },
   row: {
     flexDirection: "row",

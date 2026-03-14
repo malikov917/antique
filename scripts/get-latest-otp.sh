@@ -2,17 +2,18 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-TARGET_PHONE="${1:-${OTP_PHONE:-+4915123400011}}"
+TARGET_PHONE="${1:-${OTP_PHONE:-}}"
 MAX_AGE_SEC="${OTP_MAX_AGE_SEC:-600}"
 
 declare -a RECORDS=()
 
 add_record() {
   local ts="$1"
-  local code="$2"
-  local source="$3"
+  local phone="$2"
+  local code="$3"
+  local source="$4"
   if [[ -n "$code" ]]; then
-    RECORDS+=("${ts}|${code}|${source}")
+    RECORDS+=("${ts}|${phone}|${code}|${source}")
   fi
 }
 
@@ -22,8 +23,10 @@ extract_records_from_text() {
 
   while IFS='|' read -r ts phone code; do
     [[ -z "${ts:-}" || -z "${code:-}" || -z "${phone:-}" ]] && continue
-    [[ "$phone" != "$TARGET_PHONE" ]] && continue
-    add_record "$ts" "$code" "$source"
+    if [[ -n "$TARGET_PHONE" && "$phone" != "$TARGET_PHONE" ]]; then
+      continue
+    fi
+    add_record "$ts" "$phone" "$code" "$source"
   done < <(
     printf '%s' "$text" | perl -0777 -ne '
       while (/"time":\s*([0-9]{10,13}).{0,1000}?"phoneE164":"([^"]+)".{0,400}?"otpCode":"([0-9]{6})".{0,300}?"msg":"OTP issued"/sg) {
@@ -35,10 +38,10 @@ extract_records_from_text() {
 
 collect_from_tmux() {
   if ! command -v tmux >/dev/null 2>&1; then
-    return
+    return 0
   fi
   if ! tmux list-sessions >/dev/null 2>&1; then
-    return
+    return 0
   fi
 
   while IFS= read -r row; do
@@ -58,7 +61,7 @@ collect_from_tmux() {
 
 collect_from_logs() {
   local state_dir="$ROOT_DIR/state/runs"
-  [[ -d "$state_dir" ]] || return
+  [[ -d "$state_dir" ]] || return 0
 
   while IFS= read -r -d '' file; do
     local file_text
@@ -70,6 +73,7 @@ collect_from_logs() {
 
 print_latest() {
   local best_ts="-1"
+  local best_phone=""
   local best_code=""
   local best_source=""
   local now_ms
@@ -77,21 +81,23 @@ print_latest() {
   local max_age_ms=$(( MAX_AGE_SEC * 1000 ))
 
   for record in "${RECORDS[@]-}"; do
-    IFS='|' read -r ts code source <<< "$record"
-    [[ -z "$ts" || -z "$code" ]] && continue
+    IFS='|' read -r ts phone code source <<< "$record"
+    [[ -z "$ts" || -z "$phone" || -z "$code" ]] && continue
     (( now_ms - ts > max_age_ms )) && continue
     if (( ts > best_ts )); then
       best_ts="$ts"
+      best_phone="$phone"
       best_code="$code"
       best_source="$source"
     fi
   done
 
   if [[ -z "$best_code" ]]; then
+    local phone_hint="${TARGET_PHONE:-<any phone>}"
     cat <<EOF
-No recent OTP found for $TARGET_PHONE.
+No recent OTP found for $phone_hint.
 1) Tap "Send code" in the app.
-2) Re-run: ./scripts/get-latest-otp.sh $TARGET_PHONE
+2) Re-run: ./scripts/get-latest-otp.sh ${TARGET_PHONE:-+4915123400011}
 EOF
     exit 1
   fi
@@ -103,7 +109,7 @@ EOF
   fi
 
   echo "Latest OTP: $best_code"
-  echo "Phone: $TARGET_PHONE"
+  echo "Phone: $best_phone"
   echo "Source: $best_source"
   echo "Time: $iso_time"
 }
