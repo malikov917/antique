@@ -11,11 +11,10 @@ import {
   View,
   type ViewToken
 } from "react-native";
-import { FlashList } from "@shopify/flash-list";
+import { FlashList, type FlashListRef } from "@shopify/flash-list";
 import { ReelItem } from "../components/ReelItem";
 import { AnnouncementFeedCard } from "../components/AnnouncementFeedCard";
 import { UploadFlow } from "../components/UploadFlow";
-import { NotificationsSheet } from "../components/NotificationsSheet";
 import { type FeedEntry, buildFeedEntries, buildStoryRings, useReelsFeed } from "../hooks/useReelsFeed";
 import { useVideoPrefetch } from "../hooks/useVideoPrefetch";
 import { useAuthSession } from "../auth/session";
@@ -27,9 +26,9 @@ export function ReelsScreen() {
   const [activeIndex, setActiveIndex] = useState(0);
   const [seenAuthors, setSeenAuthors] = useState<Set<string>>(new Set());
   const [uploadOpen, setUploadOpen] = useState(false);
-  const [notificationsOpen, setNotificationsOpen] = useState(false);
   const { items, announcements, loading, error, refresh } = useReelsFeed(accessToken);
   const feedEntries = useMemo(() => buildFeedEntries(items, announcements), [announcements, items]);
+  const listRef = useRef<FlashListRef<FeedEntry>>(null);
   const activeReelIndex = useMemo(() => {
     if (feedEntries.length === 0) {
       return 0;
@@ -39,6 +38,12 @@ export function ReelsScreen() {
     return index < 0 ? 0 : Math.min(index, Math.max(items.length - 1, 0));
   }, [activeIndex, feedEntries, items.length]);
   const storyRings = useMemo(() => buildStoryRings(items, seenAuthors), [items, seenAuthors]);
+  const isAtEnd = feedEntries.length > 0 && activeIndex >= feedEntries.length - 1;
+
+  const scrollToTop = useCallback(() => {
+    setActiveIndex(0);
+    listRef.current?.scrollToOffset({ offset: 0, animated: true });
+  }, []);
 
   useVideoPrefetch(items, activeReelIndex);
 
@@ -76,6 +81,16 @@ export function ReelsScreen() {
     });
   }, [activeIndex, feedEntries]);
 
+  useEffect(() => {
+    if (!isAtEnd) {
+      return;
+    }
+    const timeout = setTimeout(() => {
+      scrollToTop();
+    }, 4500);
+    return () => clearTimeout(timeout);
+  }, [isAtEnd, scrollToTop]);
+
   if (loading) {
     return (
       <View style={styles.centered} testID="reels-screen-loading">
@@ -88,6 +103,7 @@ export function ReelsScreen() {
   return (
     <View style={styles.root} testID="reels-screen">
       <FlashList
+        ref={listRef}
         data={feedEntries}
         renderItem={renderItem}
         pagingEnabled
@@ -118,18 +134,11 @@ export function ReelsScreen() {
           ))}
         </ScrollView>
       </View>
-      <View style={styles.topMeta}>
-        <Text style={styles.metaText}>{error ? `Offline fallback: ${error}` : "Live feed"}</Text>
-      </View>
-      <Pressable
-        testID="feed-updates-button"
-        accessibilityLabel="Feed updates"
-        accessibilityHint="Opens recent feed updates and notifications"
-        style={styles.notificationsButton}
-        onPress={() => setNotificationsOpen(true)}
-      >
-        <Text style={styles.notificationsButtonText}>Activity</Text>
-      </Pressable>
+      {error ? (
+        <View style={styles.topMeta}>
+          <Text style={styles.metaText}>Offline fallback: {error}</Text>
+        </View>
+      ) : null}
       {user?.activeRole === "seller" ? (
         <Pressable testID="upload-button" style={styles.uploadButton} onPress={() => setUploadOpen(true)}>
           <Text style={styles.uploadButtonText}>Upload</Text>
@@ -149,18 +158,6 @@ export function ReelsScreen() {
                 refresh();
               }}
             />
-          </Pressable>
-        </Pressable>
-      </Modal>
-      <Modal
-        animationType="slide"
-        transparent
-        visible={notificationsOpen}
-        onRequestClose={() => setNotificationsOpen(false)}
-      >
-        <Pressable style={styles.modalOverlay} onPress={() => setNotificationsOpen(false)}>
-          <Pressable testID="notifications-modal" style={styles.sheet} onPress={(event) => event.stopPropagation()}>
-            <NotificationsSheet />
           </Pressable>
         </Pressable>
       </Modal>
@@ -242,21 +239,6 @@ const styles = StyleSheet.create({
   },
   uploadButtonText: {
     color: "#111111",
-    fontWeight: "700"
-  },
-  notificationsButton: {
-    position: "absolute",
-    left: 20,
-    bottom: 44,
-    backgroundColor: "rgba(255,255,255,0.15)",
-    borderRadius: 999,
-    borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.3)",
-    paddingHorizontal: 20,
-    paddingVertical: 12
-  },
-  notificationsButtonText: {
-    color: "#f2f2f2",
     fontWeight: "700"
   },
   modalOverlay: {
