@@ -18,15 +18,17 @@ import { UploadFlow } from "../components/UploadFlow";
 import { NotificationsSheet } from "../components/NotificationsSheet";
 import { type FeedEntry, buildFeedEntries, buildStoryRings, useReelsFeed } from "../hooks/useReelsFeed";
 import { useVideoPrefetch } from "../hooks/useVideoPrefetch";
+import { useAuthSession } from "../auth/session";
 
 const { height } = Dimensions.get("window");
 
 export function ReelsScreen() {
+  const { accessToken, user } = useAuthSession();
   const [activeIndex, setActiveIndex] = useState(0);
   const [seenAuthors, setSeenAuthors] = useState<Set<string>>(new Set());
   const [uploadOpen, setUploadOpen] = useState(false);
   const [notificationsOpen, setNotificationsOpen] = useState(false);
-  const { items, announcements, loading, error, refresh } = useReelsFeed();
+  const { items, announcements, loading, error, refresh } = useReelsFeed(accessToken);
   const feedEntries = useMemo(() => buildFeedEntries(items, announcements), [announcements, items]);
   const activeReelIndex = useMemo(() => {
     if (feedEntries.length === 0) {
@@ -126,11 +128,13 @@ export function ReelsScreen() {
         style={styles.notificationsButton}
         onPress={() => setNotificationsOpen(true)}
       >
-        <Text style={styles.notificationsButtonText}>Updates</Text>
+        <Text style={styles.notificationsButtonText}>Activity</Text>
       </Pressable>
-      <Pressable testID="upload-button" style={styles.uploadButton} onPress={() => setUploadOpen(true)}>
-        <Text style={styles.uploadButtonText}>Upload</Text>
-      </Pressable>
+      {user?.activeRole === "seller" ? (
+        <Pressable testID="upload-button" style={styles.uploadButton} onPress={() => setUploadOpen(true)}>
+          <Text style={styles.uploadButtonText}>Upload</Text>
+        </Pressable>
+      ) : null}
       <Modal
         animationType="slide"
         transparent

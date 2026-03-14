@@ -11,6 +11,7 @@
     "ensure:workflows": "./scripts/ensure-mobile-workflows.sh",
     "ensure:workflows:android": "./scripts/ensure-mobile-workflows-android.sh",
     "ensure:workflows:all": "pnpm ensure:workflows && SKIP_CHECK=1 pnpm ensure:workflows:android",
+    "ensure:screen-audit:ios": "./scripts/run-ios-role-screen-audit.sh",
     "lint": "pnpm -r lint",
     "typecheck": "pnpm --filter @antique/types exec tsc -b tsconfig.json --force && pnpm --filter @antique/mobile typecheck && tsc -b",
     "test": "pnpm -r test",

@@ -13,3 +13,4 @@ apps/mobile/dist
 apps/api/.env
 apps/mobile/.env
 apps/api/data/
+state/

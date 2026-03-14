@@ -1,0 +1,15 @@
+appId: host.exp.Exponent
+---
+- launchApp
+- openLink: ${EXPO_DEV_URL}
+- runFlow:
+    when:
+      visible: "Continue"
+    commands:
+      - tapOn:
+          point: "92%,16%"
+- assertVisible:
+    id: "auth-screen"
+- assertVisible:
+    text: "Sign in or register with your phone number."
+- takeScreenshot: "guest-auth"

@@ -101,9 +101,8 @@ function fallbackItems(): ReelPlayableItem[] {
 }
 
 const API_BASE_URL = process.env.EXPO_PUBLIC_API_BASE_URL ?? "http://localhost:4000";
-const DEV_ACCESS_TOKEN = process.env.EXPO_PUBLIC_ACCESS_TOKEN;
 
-export function useReelsFeed() {
+export function useReelsFeed(accessToken?: string) {
   const [items, setItems] = useState<ReelPlayableItem[]>([]);
   const [announcements, setAnnouncements] = useState<AnnouncementItem[]>([]);
   const [loading, setLoading] = useState(true);
@@ -119,9 +118,9 @@ export function useReelsFeed() {
     const fetchFeed = async () => {
       try {
         setLoading(true);
-        const headers = DEV_ACCESS_TOKEN
+        const headers = accessToken
           ? {
-              authorization: `Bearer ${DEV_ACCESS_TOKEN}`
+              authorization: `Bearer ${accessToken}`
             }
           : undefined;
 
@@ -170,7 +169,7 @@ export function useReelsFeed() {
     };
     void fetchFeed();
     return () => abortController.abort();
-  }, [refreshNonce]);
+  }, [accessToken, refreshNonce]);
 
   return useMemo(
     () => ({

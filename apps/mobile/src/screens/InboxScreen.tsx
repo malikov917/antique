@@ -1,10 +1,10 @@
 import { useState } from "react";
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 import type { Deal } from "@antique/types";
+import { useAuthSession } from "../auth/session";
 import { useInboxTimeline } from "../hooks/useInboxTimeline";
 
 const API_BASE_URL = process.env.EXPO_PUBLIC_API_BASE_URL ?? "http://localhost:4000";
-const DEV_ACCESS_TOKEN = process.env.EXPO_PUBLIC_ACCESS_TOKEN;
 
 function formatDealStatus(status: string): string {
   return status.replaceAll("_", " ");
@@ -25,7 +25,8 @@ function canResolveCorrection(deal: Deal | null, perspective: "buyer" | "seller"
 }
 
 export function InboxScreen() {
-  const { items, loading, error, refresh } = useInboxTimeline();
+  const { accessToken } = useAuthSession();
+  const { items, loading, error, refresh } = useInboxTimeline(accessToken);
   const [actionError, setActionError] = useState<string | null>(null);
   const [pendingDealActions, setPendingDealActions] = useState<Record<string, boolean>>({});
   const [forms, setForms] = useState<Record<string, { shippingAddress: string; reason: string }>>({});
@@ -35,9 +36,9 @@ export function InboxScreen() {
   };
 
   const handleCorrectionRequest = async (dealId: string) => {
-    const token = DEV_ACCESS_TOKEN;
+    const token = accessToken;
     if (!token) {
-      setActionError("Set EXPO_PUBLIC_ACCESS_TOKEN to submit correction requests.");
+      setActionError("Sign in first to submit correction requests.");
       return;
     }
 
@@ -77,9 +78,9 @@ export function InboxScreen() {
     correctionId: string,
     decision: "approve" | "reject"
   ) => {
-    const token = DEV_ACCESS_TOKEN;
+    const token = accessToken;
     if (!token) {
-      setActionError("Set EXPO_PUBLIC_ACCESS_TOKEN to resolve correction requests.");
+      setActionError("Sign in first to resolve correction requests.");
       return;
     }
 

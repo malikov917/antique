@@ -1,8 +1,10 @@
 import { ActivityIndicator, ScrollView, StyleSheet, Text, View } from "react-native";
+import { useAuthSession } from "../auth/session";
 import { useNotifications } from "../hooks/useNotifications";
 
 export function NotificationsSheet() {
-  const { notifications, announcements, loading, error } = useNotifications();
+  const { accessToken } = useAuthSession();
+  const { notifications, announcements, loading, error } = useNotifications(accessToken);
 
   if (loading) {
     return (

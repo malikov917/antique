@@ -353,6 +353,36 @@ E2E tests:
 3. Day close behavior and notifications.
 4. For failures/stalls, capture screenshot + relevant logs before reporting blocker.
 
+### 13.1 Current UX/E2E quality gaps (observed on March 12, 2026)
+These are implementation quality gaps observed during role-based iOS walkthroughs with seeded data:
+
+1. Feed source is still decoupled from marketplace domain:
+1. Reels feed uses in-memory demo videos rather than listing/video entities in SQLite marketplace tables.
+2. This makes transactional state (listing sold/day_closed) only partially reflected in feed UX.
+2. Screen-level layout quality issues:
+1. Header/title text can overlap with status area on Inbox/Activity.
+2. Tools overlay (Expo Go) can obscure top-right content in walkthroughs.
+3. Workflow depth in mobile UI remains limited:
+1. Inbox currently shows deal summary cards but no dedicated threaded chat detail screen in tab flow.
+2. Activity is event-list only; lacks filtering/grouping for buyer vs seller operations.
+
+### 13.2 Beta UI-first priorities (replanned on March 12, 2026)
+For current beta, prioritize visual quality and flow clarity before deeper security/infra hardening:
+
+1. Auth-first navigation:
+1. Guest sees dedicated login/register route first.
+2. App tabs are visible only after login.
+2. Role clarity in UI:
+1. Buyer cannot see seller-only actions such as upload.
+2. Seller-only actions are visible only in seller role.
+3. Profile simplification:
+1. Profile focuses on user account data and role/application controls.
+2. Login/register lives on dedicated auth screen, not inside Profile.
+4. Visual finishing pass:
+1. Safe-area and spacing fixes on Feed/Inbox/Activity/Profile.
+2. Copy cleanup for unclear labels (for example, ambiguous `Updates` button naming).
+3. Keep visual QA artifact-driven using role-by-role screenshots from iOS walkthroughs.
+
 Delivery gate before moving ticket to `In Review`:
 1. `pnpm lint`
 2. `pnpm typecheck`

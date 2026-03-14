@@ -1,37 +1,22 @@
-import { useEffect, useMemo, useState } from "react";
-import {
-  ActivityIndicator,
-  Platform,
-  Pressable,
-  ScrollView,
-  StyleSheet,
-  Text,
-  TextInput,
-  View
-} from "react-native";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
+import { Redirect } from "expo-router";
 import type {
   AuthErrorResponse,
   MeResponse,
-  OtpRequestResponse,
-  OtpVerifyResponse,
   RoleSwitchResponse,
   SellerApplication,
   SellerApplicationResponse,
   SellerApplyResponse
 } from "@antique/types";
+import { useAuthSession } from "../auth/session";
 
 const API_BASE_URL = process.env.EXPO_PUBLIC_API_BASE_URL ?? "http://localhost:4000";
-const INITIAL_ACCESS_TOKEN = process.env.EXPO_PUBLIC_ACCESS_TOKEN ?? "";
-const INITIAL_PHONE = process.env.EXPO_PUBLIC_TEST_PHONE ?? "";
 
 interface ApiError {
   code?: string;
   message: string;
   status: number;
-}
-
-function asPlatform(): "ios" | "android" {
-  return Platform.OS === "android" ? "android" : "ios";
 }
 
 function safeErrorMessage(error: unknown, fallback: string): string {
@@ -61,11 +46,7 @@ async function readJson<T>(response: Response): Promise<T> {
 }
 
 export function ProfileScreen() {
-  const [phone, setPhone] = useState(INITIAL_PHONE);
-  const [otpCode, setOtpCode] = useState("");
-  const [deviceId] = useState(() => `mobile-${asPlatform()}-${Date.now()}`);
-  const [accessToken, setAccessToken] = useState(INITIAL_ACCESS_TOKEN);
-  const [me, setMe] = useState<MeResponse["user"] | null>(null);
+  const { accessToken, user, setUser, signOut, isAuthenticated } = useAuthSession();
   const [application, setApplication] = useState<SellerApplication | null>(null);
   const [displayName, setDisplayName] = useState("");
   const [roleDraft, setRoleDraft] = useState<"buyer" | "seller" | "admin">("buyer");
@@ -73,9 +54,7 @@ export function ProfileScreen() {
   const [shopName, setShopName] = useState("");
   const [note, setNote] = useState("");
   const [busy, setBusy] = useState(false);
-  const [message, setMessage] = useState("Sign in to unlock profile and seller tools.");
-
-  const isAuthed = accessToken.trim().length > 0;
+  const [message, setMessage] = useState("Manage your account and role.");
 
   const authHeaders = useMemo(
     () => ({
@@ -84,24 +63,18 @@ export function ProfileScreen() {
     [accessToken]
   );
 
-  async function loadProfileAndApplication(tokenOverride?: string) {
-    const token = tokenOverride ?? accessToken;
-    if (!token.trim()) {
-      return;
-    }
-
+  const loadProfileAndApplication = useCallback(async () => {
     setBusy(true);
     try {
-      const headers = { Authorization: `Bearer ${token}` };
-      const meResponse = await fetch(`${API_BASE_URL}/v1/me`, { headers });
+      const meResponse = await fetch(`${API_BASE_URL}/v1/me`, { headers: authHeaders });
       const meBody = await readJson<MeResponse>(meResponse);
-      setMe(meBody.user);
+      setUser(meBody.user);
       setDisplayName(meBody.user.displayName ?? "");
       if (meBody.user.allowedRoles.includes(meBody.user.activeRole)) {
         setRoleDraft(meBody.user.activeRole);
       }
 
-      const appResponse = await fetch(`${API_BASE_URL}/v1/seller/application`, { headers });
+      const appResponse = await fetch(`${API_BASE_URL}/v1/seller/application`, { headers: authHeaders });
       if (appResponse.ok) {
         const appBody = await readJson<SellerApplicationResponse>(appResponse);
         setApplication(appBody.application);
@@ -133,58 +106,15 @@ export function ProfileScreen() {
     } finally {
       setBusy(false);
     }
-  }
+  }, [authHeaders, setUser]);
 
   useEffect(() => {
-    void loadProfileAndApplication();
-  }, [accessToken]);
-
-  async function requestOtp() {
-    setBusy(true);
-    try {
-      const response = await fetch(`${API_BASE_URL}/v1/auth/otp/request`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ phone })
-      });
-      const body = await readJson<OtpRequestResponse>(response);
-      setMessage(`OTP requested. Retry after ${body.retryAfterSec}s.`);
-    } catch (error) {
-      setMessage(safeErrorMessage(error, "OTP request failed."));
-    } finally {
-      setBusy(false);
+    if (isAuthenticated) {
+      void loadProfileAndApplication();
     }
-  }
-
-  async function verifyOtp() {
-    setBusy(true);
-    try {
-      const response = await fetch(`${API_BASE_URL}/v1/auth/otp/verify`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          phone,
-          code: otpCode,
-          deviceId,
-          platform: asPlatform()
-        })
-      });
-      const body = await readJson<OtpVerifyResponse>(response);
-      setAccessToken(body.tokens.accessToken);
-      setMessage("Signed in.");
-      await loadProfileAndApplication(body.tokens.accessToken);
-    } catch (error) {
-      setMessage(safeErrorMessage(error, "OTP verification failed."));
-    } finally {
-      setBusy(false);
-    }
-  }
+  }, [isAuthenticated, loadProfileAndApplication]);
 
   async function saveDisplayName() {
-    if (!isAuthed) {
-      return;
-    }
-
     setBusy(true);
     try {
       const response = await fetch(`${API_BASE_URL}/v1/me`, {
@@ -196,7 +126,7 @@ export function ProfileScreen() {
         body: JSON.stringify({ displayName: displayName.trim() || null })
       });
       const body = await readJson<MeResponse>(response);
-      setMe(body.user);
+      setUser(body.user);
       setDisplayName(body.user.displayName ?? "");
       setMessage("Display name updated.");
     } catch (error) {
@@ -207,10 +137,6 @@ export function ProfileScreen() {
   }
 
   async function switchRole() {
-    if (!isAuthed) {
-      return;
-    }
-
     setBusy(true);
     try {
       const response = await fetch(`${API_BASE_URL}/v1/me/role-switch`, {
@@ -222,7 +148,7 @@ export function ProfileScreen() {
         body: JSON.stringify({ role: roleDraft })
       });
       const body = await readJson<RoleSwitchResponse>(response);
-      setMe(body.user);
+      setUser(body.user);
       setMessage(`Active role: ${body.user.activeRole}`);
       await loadProfileAndApplication();
     } catch (error) {
@@ -233,10 +159,6 @@ export function ProfileScreen() {
   }
 
   async function submitApplication() {
-    if (!isAuthed) {
-      return;
-    }
-
     setBusy(true);
     try {
       const response = await fetch(`${API_BASE_URL}/v1/seller/apply`, {
@@ -253,7 +175,7 @@ export function ProfileScreen() {
       });
       const body = await readJson<SellerApplyResponse>(response);
       setApplication(body.application);
-      setMessage(`Application state: ${body.application.status}`);
+      setMessage(`Seller application: ${body.application.status}`);
     } catch (error) {
       setMessage(safeErrorMessage(error, "Seller application submit failed."));
     } finally {
@@ -261,100 +183,65 @@ export function ProfileScreen() {
     }
   }
 
+  if (!isAuthenticated) {
+    return <Redirect href={"/auth" as never} />;
+  }
+
   return (
     <ScrollView style={styles.root} contentContainerStyle={styles.content} testID="profile-screen">
       <View style={styles.section}>
-        <Text style={styles.sectionTitle}>Profile</Text>
-        <Text style={styles.help}>Sign in with your phone first, then finish profile setup and seller onboarding.</Text>
-      </View>
-
-      <View style={styles.section} testID="profile-onboarding-steps">
-        <Text style={styles.label}>Getting started</Text>
-        <Text style={styles.stepLine}>{isAuthed ? "1. Signed in" : "1. Sign in with phone number"}</Text>
-        <Text style={styles.stepLine}>2. Add your display name and select your role</Text>
-        <Text style={styles.stepLine}>3. Submit seller application details if you plan to sell</Text>
+        <Text style={styles.sectionTitle}>Your profile</Text>
+        <Text style={styles.help}>Account details and seller access controls.</Text>
       </View>
 
       <View style={styles.section}>
-        <Text style={styles.label}>Step 1: Sign in with phone number</Text>
-        <Text style={styles.help}>We send a one-time code to verify your identity on this device.</Text>
-        <Text style={styles.label}>Phone number (E.164)</Text>
-        <TextInput
-          value={phone}
-          onChangeText={setPhone}
-          style={styles.input}
-          autoCapitalize="none"
-          placeholder="+15551234567"
-          placeholderTextColor="#7d7d7d"
-        />
-        <Pressable onPress={() => void requestOtp()} style={styles.primaryButton} disabled={busy}>
-          <Text style={styles.primaryButtonText}>Send sign-in code</Text>
-        </Pressable>
-
-        <Text style={styles.label}>One-time code</Text>
-        <TextInput
-          value={otpCode}
-          onChangeText={setOtpCode}
-          style={styles.input}
-          autoCapitalize="none"
-          placeholder="123456"
-          placeholderTextColor="#7d7d7d"
-        />
-        <Pressable onPress={() => void verifyOtp()} style={styles.primaryButton} disabled={busy}>
-          <Text style={styles.primaryButtonText}>Confirm code and sign in</Text>
-        </Pressable>
+        <Text style={styles.statusLine}>Phone: {user?.phone ?? "-"}</Text>
+        <Text style={styles.statusLine}>User ID: {user?.id ?? "-"}</Text>
+        <Text style={styles.statusLine}>Active role: {user?.activeRole ?? "-"}</Text>
+        <Text style={styles.statusLine}>Allowed roles: {user?.allowedRoles.join(", ") ?? "-"}</Text>
       </View>
 
       <View style={styles.section}>
-        <Text style={styles.label}>Step 2: Profile basics</Text>
-        {!isAuthed ? <Text style={styles.lockedHint}>Sign in first to edit your display name.</Text> : null}
         <Text style={styles.label}>Display name</Text>
         <TextInput
           value={displayName}
           onChangeText={setDisplayName}
           style={styles.input}
           autoCapitalize="words"
-          editable={isAuthed}
           placeholder="Antique seller"
           placeholderTextColor="#7d7d7d"
         />
-        <Pressable onPress={() => void saveDisplayName()} style={styles.secondaryButton} disabled={!isAuthed || busy}>
+        <Pressable onPress={() => void saveDisplayName()} style={styles.secondaryButton} disabled={busy}>
           <Text style={styles.secondaryButtonText}>Save display name</Text>
         </Pressable>
       </View>
 
       <View style={styles.section}>
-        <Text style={styles.label}>Step 2: Active role</Text>
-        {!isAuthed ? <Text style={styles.lockedHint}>Role switching unlocks after sign-in.</Text> : null}
+        <Text style={styles.label}>Active role</Text>
         <View style={styles.roleRow}>
           {(["buyer", "seller", "admin"] as const).map((role) => (
             <Pressable
               key={role}
               onPress={() => setRoleDraft(role)}
               style={[styles.roleButton, roleDraft === role ? styles.roleButtonActive : null]}
-              disabled={!isAuthed || busy}
+              disabled={busy}
             >
-              <Text style={[styles.roleButtonText, roleDraft === role ? styles.roleButtonTextActive : null]}>
-                {role}
-              </Text>
+              <Text style={[styles.roleButtonText, roleDraft === role ? styles.roleButtonTextActive : null]}>{role}</Text>
             </Pressable>
           ))}
         </View>
-        <Pressable onPress={() => void switchRole()} style={styles.secondaryButton} disabled={!isAuthed || busy}>
-          <Text style={styles.secondaryButtonText}>Switch active role</Text>
+        <Pressable onPress={() => void switchRole()} style={styles.secondaryButton} disabled={busy}>
+          <Text style={styles.secondaryButtonText}>Switch role</Text>
         </Pressable>
       </View>
 
       <View style={styles.section}>
-        <Text style={styles.label}>Step 3: Seller application</Text>
-        {!isAuthed ? (
-          <Text style={styles.lockedHint}>Sign in to submit seller details and track application status.</Text>
-        ) : null}
+        <Text style={styles.label}>Seller application</Text>
+        <Text style={styles.statusLine}>Current status: {application?.status ?? "not loaded"}</Text>
         <TextInput
           value={fullName}
           onChangeText={setFullName}
           style={styles.input}
-          editable={isAuthed}
           placeholder="Legal full name"
           placeholderTextColor="#7d7d7d"
         />
@@ -362,7 +249,6 @@ export function ProfileScreen() {
           value={shopName}
           onChangeText={setShopName}
           style={styles.input}
-          editable={isAuthed}
           placeholder="Shop name"
           placeholderTextColor="#7d7d7d"
         />
@@ -370,25 +256,23 @@ export function ProfileScreen() {
           value={note}
           onChangeText={setNote}
           style={[styles.input, styles.multiline]}
-          editable={isAuthed}
           placeholder="Optional note"
           placeholderTextColor="#7d7d7d"
           multiline
           numberOfLines={3}
         />
-        <Pressable onPress={() => void submitApplication()} style={styles.secondaryButton} disabled={!isAuthed || busy}>
+        <Pressable onPress={() => void submitApplication()} style={styles.secondaryButton} disabled={busy}>
           <Text style={styles.secondaryButtonText}>Submit seller application</Text>
         </Pressable>
       </View>
 
       <View style={styles.section}>
-        <Text style={styles.statusTitle}>Current state</Text>
-        <Text style={styles.statusLine}>User: {me ? `${me.id} (${me.activeRole})` : "not loaded"}</Text>
-        <Text style={styles.statusLine}>Allowed roles: {me ? me.allowedRoles.join(", ") : "-"}</Text>
-        <Text style={styles.statusLine}>Seller application: {application?.status ?? "not loaded"}</Text>
         <Text style={styles.statusLine}>Message: {message}</Text>
-        <Pressable onPress={() => void loadProfileAndApplication()} style={styles.ghostButton} disabled={!isAuthed || busy}>
-          <Text style={styles.ghostButtonText}>Refresh profile state</Text>
+        <Pressable onPress={() => void loadProfileAndApplication()} style={styles.ghostButton} disabled={busy}>
+          <Text style={styles.ghostButtonText}>Refresh profile</Text>
+        </Pressable>
+        <Pressable onPress={signOut} style={styles.signOutButton} disabled={busy}>
+          <Text style={styles.signOutButtonText}>Sign out</Text>
         </Pressable>
       </View>
 
@@ -423,15 +307,6 @@ const styles = StyleSheet.create({
     fontSize: 14,
     lineHeight: 20
   },
-  stepLine: {
-    color: "#d7d7d7",
-    fontSize: 14,
-    lineHeight: 20
-  },
-  lockedHint: {
-    color: "#a5a5a5",
-    fontSize: 12
-  },
   label: {
     color: "#dddddd",
     fontSize: 13,
@@ -449,17 +324,6 @@ const styles = StyleSheet.create({
   multiline: {
     minHeight: 80,
     textAlignVertical: "top"
-  },
-  primaryButton: {
-    borderRadius: 10,
-    backgroundColor: "#f8f8f8",
-    minHeight: 42,
-    alignItems: "center",
-    justifyContent: "center"
-  },
-  primaryButtonText: {
-    color: "#121212",
-    fontWeight: "700"
   },
   secondaryButton: {
     borderRadius: 10,
@@ -496,10 +360,6 @@ const styles = StyleSheet.create({
   roleButtonTextActive: {
     color: "#111111"
   },
-  statusTitle: {
-    color: "#f8f8f8",
-    fontWeight: "700"
-  },
   statusLine: {
     color: "#d3d3d3",
     fontSize: 13
@@ -515,6 +375,17 @@ const styles = StyleSheet.create({
   ghostButtonText: {
     color: "#f8f8f8",
     fontWeight: "600"
+  },
+  signOutButton: {
+    backgroundColor: "#3a1f1f",
+    borderRadius: 10,
+    minHeight: 40,
+    alignItems: "center",
+    justifyContent: "center"
+  },
+  signOutButtonText: {
+    color: "#fbe2e2",
+    fontWeight: "700"
   },
   spinner: {
     marginVertical: 8
