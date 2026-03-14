@@ -13,9 +13,7 @@ import {
 } from "react-native";
 import { FlashList, type FlashListRef } from "@shopify/flash-list";
 import { ReelItem } from "../components/ReelItem";
-import { AnnouncementFeedCard } from "../components/AnnouncementFeedCard";
 import { UploadFlow } from "../components/UploadFlow";
-import { NotificationsSheet } from "../components/NotificationsSheet";
 import { type FeedEntry, buildFeedEntries, buildStoryRings, useReelsFeed } from "../hooks/useReelsFeed";
 import { useVideoPrefetch } from "../hooks/useVideoPrefetch";
 import { useAuthSession } from "../auth/session";
@@ -27,10 +25,12 @@ export function ReelsScreen() {
   const [activeIndex, setActiveIndex] = useState(0);
   const [seenAuthors, setSeenAuthors] = useState<Set<string>>(new Set());
   const [uploadOpen, setUploadOpen] = useState(false);
-  const [notificationsOpen, setNotificationsOpen] = useState(false);
   const feedListRef = useRef<FlashListRef<FeedEntry>>(null);
   const { items, announcements, loading, error, refresh } = useReelsFeed(accessToken);
-  const feedEntries = useMemo(() => buildFeedEntries(items, announcements), [announcements, items]);
+  const feedEntries = useMemo(() => {
+    const entries = buildFeedEntries(items, announcements);
+    return entries.filter((entry) => entry.kind === "reel");
+  }, [announcements, items]);
   const activeReelIndex = useMemo(() => {
     if (feedEntries.length === 0) {
       return 0;
@@ -78,10 +78,7 @@ export function ReelsScreen() {
 
   const renderItem = useCallback(
     ({ item, index }: { item: FeedEntry; index: number }) => {
-      if (item.kind === "announcement") {
-        return <AnnouncementFeedCard announcement={item.announcement} itemIndex={index} onBackToTop={scrollToTop} />;
-      }
-      return <ReelItem item={item.reel} active={index === activeIndex} itemIndex={index} />;
+      return item.kind === "reel" ? <ReelItem item={item.reel} active={index === activeIndex} itemIndex={index} /> : null;
     },
     [activeIndex, scrollToTop]
   );
@@ -100,6 +97,16 @@ export function ReelsScreen() {
       return next;
     });
   }, [activeIndex, feedEntries]);
+
+  useEffect(() => {
+    if (!isAtEnd) {
+      return;
+    }
+    const timer = setTimeout(() => {
+      scrollToTop();
+    }, 4500);
+    return () => clearTimeout(timer);
+  }, [isAtEnd, scrollToTop]);
 
   if (loading) {
     return (
@@ -170,15 +177,6 @@ export function ReelsScreen() {
           <Text style={styles.backToTopButtonText}>Back to top</Text>
         </Pressable>
       ) : null}
-      <Pressable
-        testID="feed-updates-button"
-        accessibilityLabel="Feed updates"
-        accessibilityHint="Opens recent feed updates and notifications"
-        style={styles.notificationsButton}
-        onPress={() => setNotificationsOpen(true)}
-      >
-        <Text style={styles.notificationsButtonText}>Activity</Text>
-      </Pressable>
       {user?.activeRole === "seller" ? (
         <Pressable testID="upload-button" style={styles.uploadButton} onPress={() => setUploadOpen(true)}>
           <Text style={styles.uploadButtonText}>Upload</Text>
@@ -198,18 +196,6 @@ export function ReelsScreen() {
                 refresh();
               }}
             />
-          </View>
-        </Pressable>
-      </Modal>
-      <Modal
-        animationType="slide"
-        transparent
-        visible={notificationsOpen}
-        onRequestClose={() => setNotificationsOpen(false)}
-      >
-        <Pressable style={styles.modalOverlay} onPress={() => setNotificationsOpen(false)}>
-          <View testID="notifications-modal" style={styles.sheet}>
-            <NotificationsSheet onClose={() => setNotificationsOpen(false)} />
           </View>
         </Pressable>
       </Modal>
@@ -317,17 +303,6 @@ const styles = StyleSheet.create({
     color: "#111111",
     fontWeight: "700"
   },
-  notificationsButton: {
-    position: "absolute",
-    left: 20,
-    bottom: 44,
-    backgroundColor: "rgba(255,255,255,0.15)",
-    borderRadius: 999,
-    borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.3)",
-    paddingHorizontal: 20,
-    paddingVertical: 12
-  },
   backToTopButton: {
     position: "absolute",
     right: 20,
@@ -342,10 +317,6 @@ const styles = StyleSheet.create({
   backToTopButtonText: {
     color: "#f2f2f2",
     fontSize: 12,
-    fontWeight: "700"
-  },
-  notificationsButtonText: {
-    color: "#f2f2f2",
     fontWeight: "700"
   },
   modalOverlay: {
