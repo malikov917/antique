@@ -108,6 +108,7 @@ export function useReelsFeed(accessToken?: string) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [refreshNonce, setRefreshNonce] = useState(0);
+  const [hasLoadedOnce, setHasLoadedOnce] = useState(false);
 
   const refresh = useCallback(() => {
     setRefreshNonce((current) => current + 1);
@@ -117,7 +118,9 @@ export function useReelsFeed(accessToken?: string) {
     const abortController = new AbortController();
     const fetchFeed = async () => {
       try {
-        setLoading(true);
+        if (!hasLoadedOnce) {
+          setLoading(true);
+        }
         const headers = accessToken
           ? {
               authorization: `Bearer ${accessToken}`
@@ -154,6 +157,7 @@ export function useReelsFeed(accessToken?: string) {
           setAnnouncements([]);
         }
         setError(null);
+        setHasLoadedOnce(true);
       } catch (fetchError) {
         if (abortController.signal.aborted) {
           return;
@@ -161,15 +165,18 @@ export function useReelsFeed(accessToken?: string) {
         setItems(fallbackItems());
         setAnnouncements([]);
         setError(fetchError instanceof Error ? fetchError.message : "Failed to load feed");
+        setHasLoadedOnce(true);
       } finally {
         if (!abortController.signal.aborted) {
-          setLoading(false);
+          if (!hasLoadedOnce) {
+            setLoading(false);
+          }
         }
       }
     };
     void fetchFeed();
     return () => abortController.abort();
-  }, [accessToken, refreshNonce]);
+  }, [accessToken, refreshNonce, hasLoadedOnce]);
 
   return useMemo(
     () => ({

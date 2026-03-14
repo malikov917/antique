@@ -72,14 +72,18 @@ export function ReelsScreen() {
     }
   );
 
+  const scrollToTop = useCallback(() => {
+    feedListRef.current?.scrollToIndex({ index: 0, animated: true });
+  }, []);
+
   const renderItem = useCallback(
     ({ item, index }: { item: FeedEntry; index: number }) => {
       if (item.kind === "announcement") {
-        return <AnnouncementFeedCard announcement={item.announcement} itemIndex={index} />;
+        return <AnnouncementFeedCard announcement={item.announcement} itemIndex={index} onBackToTop={scrollToTop} />;
       }
       return <ReelItem item={item.reel} active={index === activeIndex} itemIndex={index} />;
     },
-    [activeIndex, feedEntries]
+    [activeIndex, scrollToTop]
   );
 
   useEffect(() => {
@@ -140,9 +144,11 @@ export function ReelsScreen() {
           ))}
         </ScrollView>
       </View>
-      <View style={styles.topMeta}>
-        <Text style={styles.metaText}>{error ? `Offline fallback: ${error}` : "Live feed"}</Text>
-      </View>
+      {error ? (
+        <View style={styles.topMeta}>
+          <Text style={styles.metaText}>{`Offline fallback: ${error}`}</Text>
+        </View>
+      ) : null}
       <View
         style={[
           styles.buyabilityPill,
@@ -158,7 +164,7 @@ export function ReelsScreen() {
       {isAtEnd ? (
         <Pressable
           style={styles.backToTopButton}
-          onPress={() => feedListRef.current?.scrollToIndex({ index: 0, animated: true })}
+          onPress={scrollToTop}
           testID="feed-back-to-top"
         >
           <Text style={styles.backToTopButtonText}>Back to top</Text>
@@ -185,14 +191,14 @@ export function ReelsScreen() {
         onRequestClose={() => setUploadOpen(false)}
       >
         <Pressable style={styles.modalOverlay} onPress={() => setUploadOpen(false)}>
-          <Pressable testID="upload-sheet" style={styles.sheet} onPress={(event) => event.stopPropagation()}>
+          <View testID="upload-sheet" style={styles.sheet}>
             <UploadFlow
               onDone={() => {
                 setUploadOpen(false);
                 refresh();
               }}
             />
-          </Pressable>
+          </View>
         </Pressable>
       </Modal>
       <Modal
@@ -202,9 +208,9 @@ export function ReelsScreen() {
         onRequestClose={() => setNotificationsOpen(false)}
       >
         <Pressable style={styles.modalOverlay} onPress={() => setNotificationsOpen(false)}>
-          <Pressable testID="notifications-modal" style={styles.sheet} onPress={(event) => event.stopPropagation()}>
+          <View testID="notifications-modal" style={styles.sheet}>
             <NotificationsSheet onClose={() => setNotificationsOpen(false)} />
-          </Pressable>
+          </View>
         </Pressable>
       </Modal>
     </View>

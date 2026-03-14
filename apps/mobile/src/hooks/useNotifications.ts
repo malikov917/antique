@@ -21,6 +21,7 @@ export function useNotifications(accessToken?: string): NotificationsState {
   const [announcements, setAnnouncements] = useState<AnnouncementItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [hasLoadedOnce, setHasLoadedOnce] = useState(false);
 
   useEffect(() => {
     const abortController = new AbortController();
@@ -33,11 +34,15 @@ export function useNotifications(accessToken?: string): NotificationsState {
 
     const fetchData = async () => {
       try {
-        setLoading(true);
+        if (!hasLoadedOnce) {
+          setLoading(true);
+        }
         if (!headers) {
           setNotifications([]);
           setAnnouncements([]);
           setError("Set EXPO_PUBLIC_ACCESS_TOKEN to load timeline data.");
+          setHasLoadedOnce(true);
+          setLoading(false);
           return;
         }
 
@@ -59,13 +64,17 @@ export function useNotifications(accessToken?: string): NotificationsState {
         setNotifications(notificationsPayload.notifications ?? []);
         setAnnouncements(announcementsPayload.announcements ?? []);
         setError(null);
+        setHasLoadedOnce(true);
       } catch (fetchError) {
         if (!abortController.signal.aborted) {
           setError(fetchError instanceof Error ? fetchError.message : "Failed to load notifications");
+          setHasLoadedOnce(true);
         }
       } finally {
         if (!abortController.signal.aborted) {
-          setLoading(false);
+          if (!hasLoadedOnce) {
+            setLoading(false);
+          }
         }
       }
     };
@@ -79,7 +88,7 @@ export function useNotifications(accessToken?: string): NotificationsState {
       clearInterval(intervalId);
       abortController.abort();
     };
-  }, [accessToken]);
+  }, [accessToken, hasLoadedOnce]);
 
   return useMemo(
     () => ({

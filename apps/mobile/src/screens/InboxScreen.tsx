@@ -34,6 +34,7 @@ export function InboxScreen() {
   const [activeMessages, setActiveMessages] = useState<ChatMessage[]>([]);
   const [messageDraft, setMessageDraft] = useState("");
   const [chatBusy, setChatBusy] = useState(false);
+  const [chatError, setChatError] = useState<string | null>(null);
 
   const setPending = (dealId: string, value: boolean) => {
     setPendingDealActions((current) => ({ ...current, [dealId]: value }));
@@ -115,12 +116,14 @@ export function InboxScreen() {
     setActiveChatItem(item);
     setActiveMessages(item.messages);
     setMessageDraft("");
+    setChatError(null);
   };
 
   const closeChat = () => {
     setActiveChatItem(null);
     setActiveMessages([]);
     setMessageDraft("");
+    setChatError(null);
   };
 
   const sendChatMessage = async () => {
@@ -131,6 +134,7 @@ export function InboxScreen() {
     if (!text) {
       return;
     }
+    setChatError(null);
     setChatBusy(true);
     try {
       const response = await fetch(`${API_BASE_URL}/v1/chats/${activeChatItem.chat.id}/messages`, {
@@ -149,9 +153,10 @@ export function InboxScreen() {
         setActiveMessages((current) => [...current, created.message!]);
       }
       setMessageDraft("");
-      refresh();
     } catch (sendError) {
-      setActionError(sendError instanceof Error ? sendError.message : "Message send failed");
+      const nextError = sendError instanceof Error ? sendError.message : "Message send failed";
+      setActionError(nextError);
+      setChatError(nextError);
     } finally {
       setChatBusy(false);
     }
@@ -288,6 +293,7 @@ export function InboxScreen() {
               </Pressable>
             </View>
             <ScrollView style={styles.chatScroll} contentContainerStyle={styles.chatScrollContent}>
+              {chatError ? <Text style={styles.errorText}>{chatError}</Text> : null}
               {activeMessages.length === 0 ? (
                 <Text style={styles.metaText}>No messages yet.</Text>
               ) : (
