@@ -13,3 +13,6 @@ apps/mobile/dist
 apps/api/.env
 apps/mobile/.env
 apps/api/data/
+mux-access-token-all.env
+.worktrees
+state
