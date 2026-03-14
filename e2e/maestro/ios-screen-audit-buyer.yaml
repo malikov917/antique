@@ -1,0 +1,30 @@
+appId: host.exp.Exponent
+---
+- launchApp
+- openLink: ${EXPO_DEV_URL}
+- runFlow:
+    when:
+      visible: "Continue"
+    commands:
+      - tapOn:
+          point: "92%,16%"
+- assertVisible:
+    id: "tab-feed"
+- assertVisible:
+    id: "reels-screen"
+- takeScreenshot: "buyer-feed"
+- tapOn:
+    id: "tab-inbox"
+- assertVisible:
+    id: "inbox-screen"
+- takeScreenshot: "buyer-inbox"
+- tapOn:
+    id: "tab-activity"
+- assertVisible:
+    id: "activity-screen"
+- takeScreenshot: "buyer-activity"
+- tapOn:
+    id: "tab-profile"
+- assertVisible:
+    id: "profile-screen"
+- takeScreenshot: "buyer-profile"

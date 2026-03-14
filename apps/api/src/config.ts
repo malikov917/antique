@@ -21,9 +21,21 @@ export interface ApiConfig {
   authOtpRequestPerPhonePerHour: number;
   authOtpRequestPerIpPerHour: number;
   authOtpVerifyPerPhoneIpPerHour: number;
+  offerSubmitPerUserPerHour: number;
+  offerDecisionPerSellerPerHour: number;
+  dealPaymentDueAfterSec: number;
+  paymentOverdueSweepEnabled: boolean;
+  paymentOverdueSweepIntervalSec: number;
+  retentionPurgeEnabled: boolean;
+  retentionPurgeIntervalSec: number;
 }
 
 let localEnvLoaded = false;
+const DEFAULT_DEMO_PLAYBACK_IDS = [
+  "kF01v9aKFlY63i2GkQKQGDv5Y9PbMGdtQD92j5qJCYWU",
+  "OfjbQ3esQifgboENTs4oDXslCP5sSnst",
+  "sp9WNcgcktsmlvFLKgNm3jjSGRD00RPlq"
+];
 
 function splitCsv(value: string | undefined): string[] {
   return (value ?? "")
@@ -46,6 +58,20 @@ function parseEnumValue<T extends string>(
 function parseNumberValue(value: string | undefined, fallback: number): number {
   const parsed = Number(value ?? "");
   return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
+}
+
+function parseBooleanValue(value: string | undefined, fallback: boolean): boolean {
+  if (value === undefined) {
+    return fallback;
+  }
+  const normalized = value.trim().toLowerCase();
+  if (normalized === "1" || normalized === "true" || normalized === "yes") {
+    return true;
+  }
+  if (normalized === "0" || normalized === "false" || normalized === "no") {
+    return false;
+  }
+  return fallback;
 }
 
 function findApiRoot(): string {
@@ -110,6 +136,7 @@ function loadLocalApiEnvFile(): void {
 export function loadConfig(): ApiConfig {
   loadLocalApiEnvFile();
   const apiRoot = findApiRoot();
+  const configuredDemoPlaybackIds = splitCsv(process.env.DEMO_PLAYBACK_IDS);
   return {
     port: Number(process.env.API_PORT ?? 4000),
     dbPath: resolve(process.env.API_DB_PATH ?? join(apiRoot, "data", "antique.sqlite")),
@@ -126,7 +153,8 @@ export function loadConfig(): ApiConfig {
       ["basic", "plus", "premium"] as const,
       "plus"
     ),
-    demoPlaybackIds: splitCsv(process.env.DEMO_PLAYBACK_IDS),
+    demoPlaybackIds:
+      configuredDemoPlaybackIds.length > 0 ? configuredDemoPlaybackIds : DEFAULT_DEMO_PLAYBACK_IDS,
     authJwtSecret: process.env.AUTH_JWT_SECRET ?? "dev-insecure-auth-jwt-secret-change-me",
     authHashSecret: process.env.AUTH_HASH_SECRET ?? "dev-insecure-auth-hash-secret-change-me",
     authAccessTokenTtlSec: parseNumberValue(process.env.AUTH_ACCESS_TOKEN_TTL_SEC, 15 * 60),
@@ -145,6 +173,19 @@ export function loadConfig(): ApiConfig {
     authOtpVerifyPerPhoneIpPerHour: parseNumberValue(
       process.env.AUTH_OTP_VERIFY_PER_PHONE_IP_PER_HOUR,
       10
-    )
+    ),
+    offerSubmitPerUserPerHour: parseNumberValue(process.env.OFFER_SUBMIT_PER_USER_PER_HOUR, 30),
+    offerDecisionPerSellerPerHour: parseNumberValue(
+      process.env.OFFER_DECISION_PER_SELLER_PER_HOUR,
+      120
+    ),
+    dealPaymentDueAfterSec: parseNumberValue(process.env.DEAL_PAYMENT_DUE_AFTER_SEC, 48 * 60 * 60),
+    paymentOverdueSweepEnabled: parseBooleanValue(process.env.PAYMENT_OVERDUE_SWEEP_ENABLED, true),
+    paymentOverdueSweepIntervalSec: parseNumberValue(
+      process.env.PAYMENT_OVERDUE_SWEEP_INTERVAL_SEC,
+      60
+    ),
+    retentionPurgeEnabled: parseBooleanValue(process.env.RETENTION_PURGE_ENABLED, true),
+    retentionPurgeIntervalSec: parseNumberValue(process.env.RETENTION_PURGE_INTERVAL_SEC, 60 * 60)
   };
 }

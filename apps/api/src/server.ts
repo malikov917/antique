@@ -7,6 +7,12 @@ import { registerFeedRoutes } from "./routes/feed.js";
 import { registerUploadRoutes } from "./routes/uploads.js";
 import { registerWebhookRoutes } from "./routes/webhook.js";
 import { registerAuthRoutes } from "./routes/auth.js";
+import { registerSellerRoutes } from "./routes/seller.js";
+import { registerMeRoutes } from "./routes/me.js";
+import { registerMarketplaceRoutes } from "./routes/marketplace.js";
+import { registerTrustSafetyRoutes } from "./routes/trustSafety.js";
+import { registerNotificationRoutes } from "./routes/notifications.js";
+import { registerObservabilityRoutes } from "./routes/observability.js";
 import { type ApiConfig } from "./config.js";
 import { createDatabaseClient, type DatabaseClient } from "./db/client.js";
 import { initializeDatabase } from "./db/init.js";
@@ -14,6 +20,17 @@ import { UploadLifecycleService } from "./services/uploadLifecycle.js";
 import { MuxVideoService, type MuxClient } from "./services/videoProvider.js";
 import { AuthService, type SmsProvider } from "./services/authService.js";
 import { LoggingSmsProvider } from "./services/smsProvider.js";
+import { SellerApplicationService } from "./services/sellerApplicationService.js";
+import { MarketplaceService } from "./services/marketplaceService.js";
+import { SqliteMarketSessionDomainService } from "./services/marketplace/sessionDomainService.js";
+import { SqliteListingMutationDomainService } from "./services/marketplace/listingMutationDomainService.js";
+import { SqliteDealDomainService } from "./services/dealDomainService.js";
+import { SqliteChatDomainService } from "./services/chatDomainService.js";
+import { SellerSalesService } from "./services/sellerSalesService.js";
+import { RetentionPurgeService } from "./services/retentionPurgeService.js";
+import { TrustSafetyService } from "./services/trustSafetyService.js";
+import { NotificationService, type NotificationPushProvider } from "./services/notificationService.js";
+import { ObservabilityService } from "./services/observabilityService.js";
 
 export interface BuildServerParams {
   config: ApiConfig;
@@ -21,6 +38,7 @@ export interface BuildServerParams {
   muxClient?: MuxClient;
   dbClient?: DatabaseClient;
   smsProvider?: SmsProvider;
+  notificationPushProvider?: NotificationPushProvider;
   now?: () => number;
 }
 
@@ -64,6 +82,91 @@ export async function buildServer(params: BuildServerParams): Promise<FastifyIns
     smsProvider,
     params.now
   );
+  const sellerApplicationService = new SellerApplicationService(dbClient.sqlite, params.now);
+  const marketSessionService = new SqliteMarketSessionDomainService(dbClient.sqlite, params.now);
+  const listingMutationService = new SqliteListingMutationDomainService(
+    dbClient.sqlite,
+    {
+      offerSubmitPerUserPerHour: params.config.offerSubmitPerUserPerHour,
+    },
+    params.now
+  );
+  const marketplaceService = new MarketplaceService(
+    dbClient.sqlite,
+    {
+      offerSubmitPerUserPerHour: params.config.offerSubmitPerUserPerHour,
+      offerDecisionPerSellerPerHour: params.config.offerDecisionPerSellerPerHour,
+      dealPaymentDueAfterMs: params.config.dealPaymentDueAfterSec * 1000
+    },
+    params.now
+  );
+  const dealService = new SqliteDealDomainService(
+    dbClient.sqlite,
+    {
+      offerDecisionPerSellerPerHour: params.config.offerDecisionPerSellerPerHour,
+      dealPaymentDueAfterMs: params.config.dealPaymentDueAfterSec * 1000
+    },
+    params.now
+  );
+  const chatService = new SqliteChatDomainService(dbClient.sqlite, params.now);
+  const sellerSalesService = new SellerSalesService(dbClient.sqlite, params.now);
+  const trustSafetyService = new TrustSafetyService(dbClient.sqlite, params.now);
+  const notificationService = new NotificationService(dbClient.sqlite, {
+    now: params.now,
+    pushProvider: params.notificationPushProvider
+  });
+  const observabilityService = new ObservabilityService(dbClient.sqlite, params.now);
+  const retentionPurgeService = new RetentionPurgeService(dbClient.sqlite, params.now);
+  let retentionTimer: ReturnType<typeof setInterval> | undefined;
+  let paymentOverdueTimer: ReturnType<typeof setInterval> | undefined;
+
+  if (params.config.paymentOverdueSweepEnabled) {
+    paymentOverdueTimer = setInterval(() => {
+      try {
+        const result = marketplaceService.runPaymentOverdueSweep();
+        app.log.info(
+          {
+            transitionedDealCount: result.transitionedDealCount,
+            overdueOpenDealCount: result.overdueOpenDealCount,
+            oldestDueOpenDealAgeMs: result.oldestDueOpenDealAgeMs
+          },
+          "Payment overdue sweep run completed"
+        );
+      } catch (error) {
+        app.log.error({ err: error }, "Payment overdue sweep run failed");
+      }
+    }, params.config.paymentOverdueSweepIntervalSec * 1000);
+    paymentOverdueTimer.unref();
+  }
+
+  if (params.config.retentionPurgeEnabled) {
+    retentionTimer = setInterval(() => {
+      try {
+        const purgeResult = retentionPurgeService.runDuePurge();
+        const metrics = retentionPurgeService.getMetrics();
+        app.log.info(
+          {
+            purgedOfferAddresses: purgeResult.purgedOfferAddresses,
+            purgedSellerSalesPii: purgeResult.purgedSellerSalesPii,
+            purgedAuditEvents: purgeResult.purgedAuditEvents,
+            dueOfferAddressPurges: metrics.dueOfferAddressPurges,
+            offerBacklogAgeMs: metrics.offerBacklogAgeMs,
+            offerBacklogSlaBreached: metrics.offerBacklogSlaBreached
+          },
+          "Retention purge run completed"
+        );
+        if (metrics.offerBacklogSlaBreached) {
+          app.log.warn(
+            { offerBacklogAgeMs: metrics.offerBacklogAgeMs },
+            "Retention purge backlog breached 24h SLA"
+          );
+        }
+      } catch (error) {
+        app.log.error({ err: error }, "Retention purge run failed");
+      }
+    }, params.config.retentionPurgeIntervalSec * 1000);
+    retentionTimer.unref();
+  }
 
   await app.register(cors, { origin: true });
   await app.register(multipart);
@@ -79,13 +182,54 @@ export async function buildServer(params: BuildServerParams): Promise<FastifyIns
     }
   });
 
+  app.addHook("onRequest", async (request) => {
+    request.receivedAtMs = Date.now();
+  });
+
+  app.addHook("onResponse", async (request, reply) => {
+    const receivedAtMs = request.receivedAtMs ?? Date.now();
+    const routePattern = request.routeOptions.url ?? request.url.split("?")[0] ?? "unknown";
+    observabilityService.recordRequestMetric({
+      method: request.method,
+      routePattern,
+      statusCode: reply.statusCode,
+      durationMs: Date.now() - receivedAtMs
+    });
+  });
+
   app.get("/health", async () => ({ ok: true }));
   await registerUploadRoutes(app, { uploadLifecycle });
-  await registerFeedRoutes(app, { store });
+  await registerFeedRoutes(app, { store, authService, notificationService });
   await registerAuthRoutes(app, {
     authService,
     otpRequestIpRateLimitMax: params.config.authOtpRequestPerIpPerHour,
     otpVerifyIpRateLimitMax: params.config.authOtpVerifyPerPhoneIpPerHour
+  });
+  await registerMeRoutes(app, { authService });
+  await registerSellerRoutes(app, {
+    authService,
+    sellerApplicationService,
+    sellerSalesService
+  });
+  await registerTrustSafetyRoutes(app, {
+    authService,
+    trustSafetyService
+  });
+  await registerNotificationRoutes(app, {
+    authService,
+    notificationService
+  });
+  await registerObservabilityRoutes(app, {
+    authService,
+    observabilityService
+  });
+  await registerMarketplaceRoutes(app, {
+    authService,
+    marketSessionService,
+    listingMutationService,
+    dealService,
+    chatService,
+    notificationService
   });
   await registerWebhookRoutes(app, {
     muxWebhookSecret: params.config.muxWebhookSecret,
@@ -93,6 +237,12 @@ export async function buildServer(params: BuildServerParams): Promise<FastifyIns
   });
 
   app.addHook("onClose", async () => {
+    if (paymentOverdueTimer) {
+      clearInterval(paymentOverdueTimer);
+    }
+    if (retentionTimer) {
+      clearInterval(retentionTimer);
+    }
     dbClient.close();
   });
 

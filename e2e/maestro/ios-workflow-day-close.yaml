@@ -1,0 +1,28 @@
+appId: host.exp.Exponent
+---
+- launchApp
+- openLink: ${EXPO_DEV_URL}
+- runFlow:
+    when:
+      visible: "Continue"
+    commands:
+      - tapOn:
+          point: "92%,16%"
+- tapOn:
+    id: "tab-activity"
+- assertVisible:
+    id: "activity-screen"
+- extendedWaitUntil:
+    visible: "Market closed"
+    timeout: 20000
+- tapOn:
+    id: "tab-feed"
+- assertVisible:
+    id: "feed-updates-button"
+- tapOn:
+    id: "feed-updates-button"
+- assertVisible:
+    id: "notifications-modal"
+- extendedWaitUntil:
+    visible: "Notifications"
+    timeout: 20000

@@ -1,6 +1,10 @@
-import { ReelsScreen } from "../src/screens/ReelsScreen";
+import { Redirect } from "expo-router";
+import { useAuthSession } from "../src/auth/session";
 
 export default function IndexRoute() {
-  return <ReelsScreen />;
+  const { hasAccessToken, isAuthenticated, loadingUser } = useAuthSession();
+  if (hasAccessToken && loadingUser) {
+    return null;
+  }
+  return <Redirect href={(isAuthenticated ? "/(tabs)/feed" : "/auth") as never} />;
 }
-

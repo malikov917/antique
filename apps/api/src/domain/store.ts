@@ -23,7 +23,9 @@ export class InMemoryVideoStore {
         author: "antique-demo",
         posterUrl: `https://image.mux.com/${playbackId}/thumbnail.jpg?time=1`,
         durationSec: 15,
-        status: "ready"
+        status: "ready",
+        freshnessUpdatedAt: new Date().toISOString(),
+        freshnessAgeSec: 0
       });
     }
   }
@@ -111,7 +113,9 @@ export class InMemoryVideoStore {
       author: "seller",
       posterUrl: `https://image.mux.com/${record.playbackId}/thumbnail.jpg?time=1`,
       durationSec: 15,
-      status: "ready"
+      status: "ready",
+      freshnessUpdatedAt: new Date().toISOString(),
+      freshnessAgeSec: 0
     });
   }
 }

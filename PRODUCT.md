@@ -1,6 +1,6 @@
 # Antique Product Specification (v2)
 
-Last updated: March 5, 2026
+Last updated: March 12, 2026
 Owner: Product + Engineering (Linear team: Antique)
 Source of truth for delivery: Linear issues mapped to this spec
 
@@ -23,15 +23,16 @@ Core principles:
 | Reels feed playback | Done | 2026-03-05 | ANT-26 |
 | Gallery video upload + Mux processing | Done | 2026-03-05 | ANT-26 |
 | Identity + auth (OTP, sessions, role claims) | Done | 2026-03-05 | ANT-28 |
-| `me` profile + role switch + auth route guards | Planned (P1) | 2026-03-05 | ANT-31 |
-| Seller onboarding/approval | Planned (P1) | 2026-03-05 | ANT-32 |
-| Market day session open/close | Planned (P2) | 2026-03-05 | TBD |
-| Listings + price floor + basket + offers | Planned (P2) | 2026-03-05 | TBD |
-| Manual winner selection + auto-decline others | Planned (P2) | 2026-03-05 | TBD |
-| Per-product chat | Planned (P3) | 2026-03-05 | TBD |
-| Sold list + CSV export | Planned (P3) | 2026-03-05 | TBD |
-| Story rings + announcements + notifications | Planned (P4) | 2026-03-05 | TBD |
-| Abuse prevention + moderation + observability | Planned (P4) | 2026-03-05 | TBD |
+| `me` profile + role switch + auth route guards | Done | 2026-03-07 | ANT-31, ANT-50 |
+| Seller onboarding/approval | Done | 2026-03-06 | ANT-32, ANT-48 |
+| Market day session open/close | Done | 2026-03-06 | ANT-33 |
+| Listings + price floor + basket + offers | Done | 2026-03-07 | ANT-34, ANT-35 |
+| Manual winner selection + auto-decline others | Done | 2026-03-06 | ANT-36 |
+| Per-product chat | Done | 2026-03-07 | ANT-37 |
+| Sold list + CSV export | Done | 2026-03-11 | ANT-38 |
+| Story rings + announcements + notifications | Done | 2026-03-12 | ANT-39, ANT-40, ANT-54, ANT-58 |
+| Abuse prevention + moderation + observability | Done | 2026-03-11 | ANT-41, ANT-42 |
+| Fulfillment edge-case workflows | Done | 2026-03-12 | ANT-44, ANT-60, ANT-61, ANT-62 |
 
 Status keys:
 - `Done`: implemented and verified
@@ -41,27 +42,20 @@ Status keys:
 ## 3) Current State (Repo Reality)
 
 Implemented today:
-1. Reels feed UI with vertical playback in mobile app.
-2. Upload video from gallery.
-3. API direct upload lifecycle with Mux webhook readiness.
-4. Shared type package (`packages/types`).
-5. Phone OTP auth endpoints:
-1. `POST /v1/auth/otp/request`,
-2. `POST /v1/auth/otp/verify`,
-3. `POST /v1/auth/refresh`,
-4. `POST /v1/auth/logout`.
-6. Access/refresh token session lifecycle with rotation, revoke, and reuse detection.
-7. SQLite-backed auth persistence for users, OTP challenges, sessions, and refresh tokens.
+1. Reels-first mobile experience with Feed/Inbox/Activity/Profile tabs, story rings, announcement cards, and freshness badges.
+2. Gallery upload with preparation fallback and API direct-upload lifecycle (`POST /v1/uploads`, `GET /v1/uploads/:uploadId`) plus Mux webhook readiness.
+3. Identity foundation: OTP request/verify, refresh/logout, `GET/PATCH /v1/me`, `POST /v1/me/role-switch`, route guards, role claims, and session persistence.
+4. Seller onboarding lifecycle: `GET /v1/seller/application`, `POST /v1/seller/apply`, admin approve/reject transitions, and audit logging.
+5. Market session and listing operations: open/close day session, listing create/update, basket submit, offers submit/accept/decline, single-winner enforcement, and day-close protections.
+6. Deal and fulfillment lifecycle: deals timeline/status transitions, cancellation request + refund resolution, non-payment timeout sweep, and address-correction request/approve/reject workflow.
+7. Chat and inbox operations: per-deal chat listing, message history, and message posting with participant authorization.
+8. Notifications and announcements: in-app timeline, push-token registration, seller/admin announcements, and automated market day open/close announcements.
+9. Trust, safety, and observability: block/report actions, seller suspension, listing moderation flags, and admin observability summary endpoint.
+10. Seller operations: sales ledger API + CSV export with tenant-aware authorization and export auditing.
+11. SQLite persistence for marketplace entities (sessions, listings, basket, offers, deals, chats, notifications, announcements, sales, audit events) with tenant-scoped guards.
 
-Not implemented yet:
-1. `GET /v1/me`, `PATCH /v1/me`, and `POST /v1/me/role-switch`.
-2. Auth route guards for marketplace endpoints.
-3. Seller onboarding and approval.
-4. Listings metadata and minimum offer logic.
-5. Basket, offers, deal lifecycle, chats.
-6. Notification center and push notifications.
-7. Sold ledger and CSV export.
-8. Full app persistence outside auth domain (listings, offers, chats, notifications).
+Remaining gaps:
+1. No active MVP behavior gap is currently tracked as unimplemented in this spec; follow-on enhancements should be added as new Linear tickets before implementation.
 
 ## 4) Personas and Roles
 
@@ -138,7 +132,7 @@ Rules:
 6. `Listing` (`live`, `day_closed`, `sold`, `withdrawn`)
 7. `BasketItem`
 8. `Offer` (`submitted`, `accepted`, `declined`, `cancelled`, `expired`)
-9. `Deal` (`approved`, `awaiting_payment`, `paid`, `shipped`, `completed`, `cancelled`)
+9. `Deal` (`approved`, `awaiting_payment`, `payment_overdue`, `paid`, `shipped`, `completed`, `cancellation_requested`, `cancelled`, `refunded`)
 10. `ChatThread` (per accepted listing)
 11. `Message`
 12. `Announcement`
@@ -305,6 +299,7 @@ Add validation constants:
 1. buyer non-payment timeout,
 2. seller cancellation path,
 3. address correction workflow.
+4. Research spec documented at `docs/fulfillment-edge-case-workflows.md` (ANT-44).
 8. Moderation rules for video and listing content quality.
 
 ## 12) Prioritized Delivery Roadmap
@@ -357,6 +352,36 @@ E2E tests:
 2. Buyer -> seller application -> approval -> seller listing flow.
 3. Day close behavior and notifications.
 4. For failures/stalls, capture screenshot + relevant logs before reporting blocker.
+
+### 13.1 Current UX/E2E quality gaps (observed on March 12, 2026)
+These are implementation quality gaps observed during role-based iOS walkthroughs with seeded data:
+
+1. Feed source is still decoupled from marketplace domain:
+1. Reels feed uses in-memory demo videos rather than listing/video entities in SQLite marketplace tables.
+2. This makes transactional state (listing sold/day_closed) only partially reflected in feed UX.
+2. Screen-level layout quality issues:
+1. Header/title text can overlap with status area on Inbox/Activity.
+2. Tools overlay (Expo Go) can obscure top-right content in walkthroughs.
+3. Workflow depth in mobile UI remains limited:
+1. Inbox currently shows deal summary cards but no dedicated threaded chat detail screen in tab flow.
+2. Activity is event-list only; lacks filtering/grouping for buyer vs seller operations.
+
+### 13.2 Beta UI-first priorities (replanned on March 12, 2026)
+For current beta, prioritize visual quality and flow clarity before deeper security/infra hardening:
+
+1. Auth-first navigation:
+1. Guest sees dedicated login/register route first.
+2. App tabs are visible only after login.
+2. Role clarity in UI:
+1. Buyer cannot see seller-only actions such as upload.
+2. Seller-only actions are visible only in seller role.
+3. Profile simplification:
+1. Profile focuses on user account data and role/application controls.
+2. Login/register lives on dedicated auth screen, not inside Profile.
+4. Visual finishing pass:
+1. Safe-area and spacing fixes on Feed/Inbox/Activity/Profile.
+2. Copy cleanup for unclear labels (for example, ambiguous `Updates` button naming).
+3. Keep visual QA artifact-driven using role-by-role screenshots from iOS walkthroughs.
 
 Delivery gate before moving ticket to `In Review`:
 1. `pnpm lint`
