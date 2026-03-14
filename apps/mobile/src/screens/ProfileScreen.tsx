@@ -10,6 +10,11 @@ import type {
   SellerApplyResponse
 } from "@antique/types";
 import { useAuthSession } from "../auth/session";
+import {
+  canAccessRoleGovernance,
+  canAccessSellerMutationControls,
+  isAllowlistedAdmin
+} from "./profileGovernance";
 
 const API_BASE_URL = process.env.EXPO_PUBLIC_API_BASE_URL ?? "http://localhost:4000";
 
@@ -62,6 +67,8 @@ export function ProfileScreen() {
     }),
     [accessToken]
   );
+  const showRoleGovernance = canAccessRoleGovernance(user);
+  const showSellerMutationControls = canAccessSellerMutationControls(user);
 
   const loadProfileAndApplication = useCallback(async () => {
     setBusy(true);
@@ -74,30 +81,34 @@ export function ProfileScreen() {
         setRoleDraft(meBody.user.activeRole);
       }
 
-      const appResponse = await fetch(`${API_BASE_URL}/v1/seller/application`, { headers: authHeaders });
-      if (appResponse.ok) {
-        const appBody = await readJson<SellerApplicationResponse>(appResponse);
-        setApplication(appBody.application);
-      } else {
-        const appError = (await appResponse.json()) as AuthErrorResponse;
-        if (appError.code === "application_not_requested") {
-          setApplication({
-            status: "not_requested",
-            fullName: null,
-            shopName: null,
-            note: null,
-            rejectionReason: null,
-            submittedAt: null,
-            reviewedAt: null,
-            updatedAt: null
-          });
+      if (isAllowlistedAdmin(meBody.user)) {
+        const appResponse = await fetch(`${API_BASE_URL}/v1/seller/application`, { headers: authHeaders });
+        if (appResponse.ok) {
+          const appBody = await readJson<SellerApplicationResponse>(appResponse);
+          setApplication(appBody.application);
         } else {
-          throw {
-            code: appError.code,
-            message: appError.error,
-            status: appResponse.status
-          } satisfies ApiError;
+          const appError = (await appResponse.json()) as AuthErrorResponse;
+          if (appError.code === "application_not_requested") {
+            setApplication({
+              status: "not_requested",
+              fullName: null,
+              shopName: null,
+              note: null,
+              rejectionReason: null,
+              submittedAt: null,
+              reviewedAt: null,
+              updatedAt: null
+            });
+          } else {
+            throw {
+              code: appError.code,
+              message: appError.error,
+              status: appResponse.status
+            } satisfies ApiError;
+          }
         }
+      } else {
+        setApplication(null);
       }
 
       setMessage("Profile synced.");
@@ -137,6 +148,10 @@ export function ProfileScreen() {
   }
 
   async function switchRole() {
+    if (!showRoleGovernance) {
+      setMessage("Role controls are restricted to allowlisted admins.");
+      return;
+    }
     setBusy(true);
     try {
       const response = await fetch(`${API_BASE_URL}/v1/me/role-switch`, {
@@ -159,6 +174,10 @@ export function ProfileScreen() {
   }
 
   async function submitApplication() {
+    if (!showSellerMutationControls) {
+      setMessage("Seller application controls are restricted to allowlisted admins.");
+      return;
+    }
     setBusy(true);
     try {
       const response = await fetch(`${API_BASE_URL}/v1/seller/apply`, {
@@ -191,7 +210,11 @@ export function ProfileScreen() {
     <ScrollView style={styles.root} contentContainerStyle={styles.content} testID="profile-screen">
       <View style={styles.section}>
         <Text style={styles.sectionTitle}>Your profile</Text>
-        <Text style={styles.help}>Account details and seller access controls.</Text>
+        <Text style={styles.help}>
+          {showRoleGovernance
+            ? "Account details and admin-only role governance controls."
+            : "Account details."}
+        </Text>
       </View>
 
       <View style={styles.section}>
@@ -216,55 +239,61 @@ export function ProfileScreen() {
         </Pressable>
       </View>
 
-      <View style={styles.section}>
-        <Text style={styles.label}>Active role</Text>
-        <View style={styles.roleRow}>
-          {(["buyer", "seller", "admin"] as const).map((role) => (
-            <Pressable
-              key={role}
-              onPress={() => setRoleDraft(role)}
-              style={[styles.roleButton, roleDraft === role ? styles.roleButtonActive : null]}
-              disabled={busy}
-            >
-              <Text style={[styles.roleButtonText, roleDraft === role ? styles.roleButtonTextActive : null]}>{role}</Text>
-            </Pressable>
-          ))}
+      {showRoleGovernance ? (
+        <View style={styles.section}>
+          <Text style={styles.label}>Active role</Text>
+          <View style={styles.roleRow}>
+            {(["buyer", "seller", "admin"] as const).map((role) => (
+              <Pressable
+                key={role}
+                onPress={() => setRoleDraft(role)}
+                style={[styles.roleButton, roleDraft === role ? styles.roleButtonActive : null]}
+                disabled={busy}
+              >
+                <Text style={[styles.roleButtonText, roleDraft === role ? styles.roleButtonTextActive : null]}>
+                  {role}
+                </Text>
+              </Pressable>
+            ))}
+          </View>
+          <Pressable onPress={() => void switchRole()} style={styles.secondaryButton} disabled={busy}>
+            <Text style={styles.secondaryButtonText}>Switch role</Text>
+          </Pressable>
         </View>
-        <Pressable onPress={() => void switchRole()} style={styles.secondaryButton} disabled={busy}>
-          <Text style={styles.secondaryButtonText}>Switch role</Text>
-        </Pressable>
-      </View>
+      ) : null}
 
-      <View style={styles.section}>
-        <Text style={styles.label}>Seller application</Text>
-        <Text style={styles.statusLine}>Current status: {application?.status ?? "not loaded"}</Text>
-        <TextInput
-          value={fullName}
-          onChangeText={setFullName}
-          style={styles.input}
-          placeholder="Legal full name"
-          placeholderTextColor="#7d7d7d"
-        />
-        <TextInput
-          value={shopName}
-          onChangeText={setShopName}
-          style={styles.input}
-          placeholder="Shop name"
-          placeholderTextColor="#7d7d7d"
-        />
-        <TextInput
-          value={note}
-          onChangeText={setNote}
-          style={[styles.input, styles.multiline]}
-          placeholder="Optional note"
-          placeholderTextColor="#7d7d7d"
-          multiline
-          numberOfLines={3}
-        />
-        <Pressable onPress={() => void submitApplication()} style={styles.secondaryButton} disabled={busy}>
-          <Text style={styles.secondaryButtonText}>Submit seller application</Text>
-        </Pressable>
-      </View>
+      {showSellerMutationControls ? (
+        <View style={styles.section}>
+          <Text style={styles.label}>Seller application</Text>
+          <Text style={styles.statusLine}>Current status: {application?.status ?? "not loaded"}</Text>
+          <TextInput
+            value={fullName}
+            onChangeText={setFullName}
+            style={styles.input}
+            placeholder="Legal full name"
+            placeholderTextColor="#7d7d7d"
+          />
+          <TextInput
+            value={shopName}
+            onChangeText={setShopName}
+            style={styles.input}
+            placeholder="Shop name"
+            placeholderTextColor="#7d7d7d"
+          />
+          <TextInput
+            value={note}
+            onChangeText={setNote}
+            style={[styles.input, styles.multiline]}
+            placeholder="Optional note"
+            placeholderTextColor="#7d7d7d"
+            multiline
+            numberOfLines={3}
+          />
+          <Pressable onPress={() => void submitApplication()} style={styles.secondaryButton} disabled={busy}>
+            <Text style={styles.secondaryButtonText}>Submit seller application</Text>
+          </Pressable>
+        </View>
+      ) : null}
 
       <View style={styles.section}>
         <Text style={styles.statusLine}>Message: {message}</Text>
