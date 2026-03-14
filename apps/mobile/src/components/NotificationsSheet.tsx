@@ -1,8 +1,8 @@
-import { ActivityIndicator, ScrollView, StyleSheet, Text, View } from "react-native";
+import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { useAuthSession } from "../auth/session";
 import { useNotifications } from "../hooks/useNotifications";
 
-export function NotificationsSheet() {
+export function NotificationsSheet({ onClose }: { onClose: () => void }) {
   const { accessToken } = useAuthSession();
   const { notifications, announcements, loading, error } = useNotifications(accessToken);
 
@@ -17,7 +17,12 @@ export function NotificationsSheet() {
 
   return (
     <ScrollView contentContainerStyle={styles.root} testID="notifications-sheet">
-      <Text style={styles.heading}>Notifications</Text>
+      <View style={styles.headerRow}>
+        <Text style={styles.heading}>Notifications</Text>
+        <Pressable onPress={onClose} style={styles.closeButton} testID="notifications-close">
+          <Text style={styles.closeButtonText}>Close</Text>
+        </Pressable>
+      </View>
       {error ? <Text style={styles.errorText}>{error}</Text> : null}
 
       {notifications.length === 0 ? (
@@ -66,6 +71,25 @@ const styles = StyleSheet.create({
     fontSize: 18,
     fontWeight: "700",
     marginTop: 4
+  },
+  headerRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    gap: 10
+  },
+  closeButton: {
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: "#3a3a3a",
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    backgroundColor: "#1c1c1c"
+  },
+  closeButtonText: {
+    color: "#f0f0f0",
+    fontWeight: "700",
+    fontSize: 12
   },
   card: {
     backgroundColor: "#222222",

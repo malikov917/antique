@@ -11,7 +11,7 @@ import {
   View,
   type ViewToken
 } from "react-native";
-import { FlashList } from "@shopify/flash-list";
+import { FlashList, type FlashListRef } from "@shopify/flash-list";
 import { ReelItem } from "../components/ReelItem";
 import { AnnouncementFeedCard } from "../components/AnnouncementFeedCard";
 import { UploadFlow } from "../components/UploadFlow";
@@ -28,6 +28,7 @@ export function ReelsScreen() {
   const [seenAuthors, setSeenAuthors] = useState<Set<string>>(new Set());
   const [uploadOpen, setUploadOpen] = useState(false);
   const [notificationsOpen, setNotificationsOpen] = useState(false);
+  const feedListRef = useRef<FlashListRef<FeedEntry>>(null);
   const { items, announcements, loading, error, refresh } = useReelsFeed(accessToken);
   const feedEntries = useMemo(() => buildFeedEntries(items, announcements), [announcements, items]);
   const activeReelIndex = useMemo(() => {
@@ -39,6 +40,26 @@ export function ReelsScreen() {
     return index < 0 ? 0 : Math.min(index, Math.max(items.length - 1, 0));
   }, [activeIndex, feedEntries, items.length]);
   const storyRings = useMemo(() => buildStoryRings(items, seenAuthors), [items, seenAuthors]);
+  const isAtEnd = feedEntries.length > 0 && activeIndex >= feedEntries.length - 1;
+  const marketAvailability = useMemo(() => {
+    const latestAnnouncement = announcements[0];
+    if (!latestAnnouncement) {
+      return { label: "Buying status unknown", tone: "neutral" as const };
+    }
+    if (
+      latestAnnouncement.eventType === "market_session_closed" ||
+      /market day closed/i.test(latestAnnouncement.title)
+    ) {
+      return { label: "Buying paused (market closed)", tone: "paused" as const };
+    }
+    if (
+      latestAnnouncement.eventType === "market_session_opened" ||
+      /market day opened|market opened/i.test(latestAnnouncement.title)
+    ) {
+      return { label: "Buying available now", tone: "open" as const };
+    }
+    return { label: "Check latest market update", tone: "neutral" as const };
+  }, [announcements]);
 
   useVideoPrefetch(items, activeReelIndex);
 
@@ -88,6 +109,7 @@ export function ReelsScreen() {
   return (
     <View style={styles.root} testID="reels-screen">
       <FlashList
+        ref={feedListRef}
         data={feedEntries}
         renderItem={renderItem}
         pagingEnabled
@@ -121,6 +143,27 @@ export function ReelsScreen() {
       <View style={styles.topMeta}>
         <Text style={styles.metaText}>{error ? `Offline fallback: ${error}` : "Live feed"}</Text>
       </View>
+      <View
+        style={[
+          styles.buyabilityPill,
+          marketAvailability.tone === "open"
+            ? styles.buyabilityOpen
+            : marketAvailability.tone === "paused"
+              ? styles.buyabilityPaused
+              : null
+        ]}
+      >
+        <Text style={styles.buyabilityText}>{marketAvailability.label}</Text>
+      </View>
+      {isAtEnd ? (
+        <Pressable
+          style={styles.backToTopButton}
+          onPress={() => feedListRef.current?.scrollToIndex({ index: 0, animated: true })}
+          testID="feed-back-to-top"
+        >
+          <Text style={styles.backToTopButtonText}>Back to top</Text>
+        </Pressable>
+      ) : null}
       <Pressable
         testID="feed-updates-button"
         accessibilityLabel="Feed updates"
@@ -160,7 +203,7 @@ export function ReelsScreen() {
       >
         <Pressable style={styles.modalOverlay} onPress={() => setNotificationsOpen(false)}>
           <Pressable testID="notifications-modal" style={styles.sheet} onPress={(event) => event.stopPropagation()}>
-            <NotificationsSheet />
+            <NotificationsSheet onClose={() => setNotificationsOpen(false)} />
           </Pressable>
         </Pressable>
       </Modal>
@@ -188,6 +231,30 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     paddingVertical: 8,
     borderRadius: 999
+  },
+  buyabilityPill: {
+    position: "absolute",
+    top: 164,
+    alignSelf: "center",
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: "#3a3a3a",
+    backgroundColor: "rgba(0,0,0,0.45)",
+    paddingHorizontal: 12,
+    paddingVertical: 7
+  },
+  buyabilityOpen: {
+    borderColor: "rgba(126, 205, 123, 0.9)",
+    backgroundColor: "rgba(33, 61, 31, 0.72)"
+  },
+  buyabilityPaused: {
+    borderColor: "rgba(255, 164, 127, 0.95)",
+    backgroundColor: "rgba(75, 42, 28, 0.72)"
+  },
+  buyabilityText: {
+    color: "#f1f1f1",
+    fontSize: 12,
+    fontWeight: "700"
   },
   metaText: {
     color: "#ececec"
@@ -255,6 +322,22 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
     paddingVertical: 12
   },
+  backToTopButton: {
+    position: "absolute",
+    right: 20,
+    top: 198,
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.35)",
+    backgroundColor: "rgba(0,0,0,0.45)",
+    paddingHorizontal: 14,
+    paddingVertical: 8
+  },
+  backToTopButtonText: {
+    color: "#f2f2f2",
+    fontSize: 12,
+    fontWeight: "700"
+  },
   notificationsButtonText: {
     color: "#f2f2f2",
     fontWeight: "700"
@@ -268,6 +351,7 @@ const styles = StyleSheet.create({
     backgroundColor: "#151515",
     borderTopLeftRadius: 20,
     borderTopRightRadius: 20,
-    paddingBottom: 24
+    paddingBottom: 24,
+    maxHeight: "84%"
   }
 });

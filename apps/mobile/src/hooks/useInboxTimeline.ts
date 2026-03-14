@@ -7,6 +7,7 @@ const POLL_INTERVAL_MS = 12000;
 export interface InboxItem {
   chat: Chat;
   deal: Deal | null;
+  messages: ChatMessage[];
   latestMessage: ChatMessage | null;
   perspective: "buyer" | "seller";
   updatedAt: string;
@@ -85,17 +86,18 @@ export function useInboxTimeline(accessToken?: string): InboxTimelineState {
               }
             }
 
-            return { chat, latestMessage };
+            return { chat, messages, latestMessage };
           })
         );
 
         const nextItems = chatMessagePairs
-          .map(({ chat, latestMessage }) => {
+          .map(({ chat, messages, latestMessage }) => {
             const deal = dealsById.get(chat.dealId) ?? null;
             const perspective = mePayload.user.id === chat.sellerUserId ? "seller" : "buyer";
             return {
               chat,
               deal,
+              messages,
               latestMessage,
               perspective,
               updatedAt: latestMessage?.createdAt ?? chat.updatedAt
