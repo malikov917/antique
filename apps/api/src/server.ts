@@ -76,7 +76,6 @@ export async function buildServer(params: BuildServerParams): Promise<FastifyIns
       authOtpTtlSec: params.config.authOtpTtlSec,
       authOtpMaxAttempts: params.config.authOtpMaxAttempts,
       authOtpCooldownSec: params.config.authOtpCooldownSec,
-      authOtpRequestPerPhonePerHour: params.config.authOtpRequestPerPhonePerHour,
       authOtpVerifyPerPhoneIpPerHour: params.config.authOtpVerifyPerPhoneIpPerHour
     },
     smsProvider,
@@ -202,7 +201,6 @@ export async function buildServer(params: BuildServerParams): Promise<FastifyIns
   await registerFeedRoutes(app, { store, authService, notificationService });
   await registerAuthRoutes(app, {
     authService,
-    otpRequestIpRateLimitMax: params.config.authOtpRequestPerIpPerHour,
     otpVerifyIpRateLimitMax: params.config.authOtpVerifyPerPhoneIpPerHour
   });
   await registerMeRoutes(app, { authService });

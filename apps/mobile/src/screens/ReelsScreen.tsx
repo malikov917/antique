@@ -13,7 +13,6 @@ import {
 } from "react-native";
 import { FlashList, type FlashListRef } from "@shopify/flash-list";
 import { ReelItem } from "../components/ReelItem";
-import { AnnouncementFeedCard } from "../components/AnnouncementFeedCard";
 import { UploadFlow } from "../components/UploadFlow";
 import { type FeedEntry, buildFeedEntries, buildStoryRings, useReelsFeed } from "../hooks/useReelsFeed";
 import { useVideoPrefetch } from "../hooks/useVideoPrefetch";
@@ -56,14 +55,15 @@ export function ReelsScreen() {
     }
   );
 
+  const scrollToTop = useCallback(() => {
+    feedListRef.current?.scrollToIndex({ index: 0, animated: true });
+  }, []);
+
   const renderItem = useCallback(
     ({ item, index }: { item: FeedEntry; index: number }) => {
-      if (item.kind === "announcement") {
-        return <AnnouncementFeedCard announcement={item.announcement} itemIndex={index} />;
-      }
-      return <ReelItem item={item.reel} active={index === activeIndex} itemIndex={index} />;
+      return item.kind === "reel" ? <ReelItem item={item.reel} active={index === activeIndex} itemIndex={index} /> : null;
     },
-    [activeIndex, feedEntries]
+    [activeIndex, scrollToTop]
   );
 
   useEffect(() => {
@@ -151,7 +151,7 @@ export function ReelsScreen() {
         onRequestClose={() => setUploadOpen(false)}
       >
         <Pressable style={styles.modalOverlay} onPress={() => setUploadOpen(false)}>
-          <Pressable testID="upload-sheet" style={styles.sheet} onPress={(event) => event.stopPropagation()}>
+          <View testID="upload-sheet" style={styles.sheet}>
             <UploadFlow
               onDone={() => {
                 setUploadOpen(false);
@@ -185,6 +185,30 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     paddingVertical: 8,
     borderRadius: 999
+  },
+  buyabilityPill: {
+    position: "absolute",
+    top: 164,
+    alignSelf: "center",
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: "#3a3a3a",
+    backgroundColor: "rgba(0,0,0,0.45)",
+    paddingHorizontal: 12,
+    paddingVertical: 7
+  },
+  buyabilityOpen: {
+    borderColor: "rgba(126, 205, 123, 0.9)",
+    backgroundColor: "rgba(33, 61, 31, 0.72)"
+  },
+  buyabilityPaused: {
+    borderColor: "rgba(255, 164, 127, 0.95)",
+    backgroundColor: "rgba(75, 42, 28, 0.72)"
+  },
+  buyabilityText: {
+    color: "#f1f1f1",
+    fontSize: 12,
+    fontWeight: "700"
   },
   metaText: {
     color: "#ececec"
@@ -250,6 +274,7 @@ const styles = StyleSheet.create({
     backgroundColor: "#151515",
     borderTopLeftRadius: 20,
     borderTopRightRadius: 20,
-    paddingBottom: 24
+    paddingBottom: 24,
+    maxHeight: "84%"
   }
 });

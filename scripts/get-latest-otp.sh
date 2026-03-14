@@ -54,7 +54,7 @@ collect_from_tmux() {
     local rest="${row#*:}"
     local window_index="${rest%%:*}"
     local window_name="${rest#*:}"
-    [[ "$window_name" != "api" ]] && continue
+    [[ "$window_name" != "api" && "$window_name" != "node" ]] && continue
 
     local pane_text
     pane_text="$(tmux capture-pane -J -p -t "${session}:${window_index}" -S -6000 2>/dev/null || true)"
