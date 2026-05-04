@@ -25,6 +25,12 @@ export function requireSharedOwnership(ownerUserId: string, user: AuthUser): voi
   }
 }
 
+export function requireAdminRole(user: AuthUser): void {
+  if (user.activeRole !== "admin") {
+    throw new AuthError("forbidden_admin_role", "Admin role is required", 403);
+  }
+}
+
 export function requireTenantScope(resourceTenantId: string, actorTenantId: string): void {
   if (resourceTenantId !== actorTenantId) {
     throw new AuthError(

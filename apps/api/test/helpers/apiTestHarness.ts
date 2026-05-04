@@ -151,6 +151,35 @@ export async function createAuthenticatedSeller(
   return auth;
 }
 
+export async function createAuthenticatedAdmin(
+  app: Awaited<ReturnType<typeof buildServer>>,
+  smsProvider: TestSmsProvider,
+  dbClient: ReturnType<typeof createDatabaseClient>,
+  phone = "+14155552673"
+): Promise<{ userId: string; accessToken: string }> {
+  const auth = await createAuthenticatedUser(app, smsProvider, phone);
+  dbClient.sqlite
+    .prepare("INSERT OR IGNORE INTO admin_allowlist(phone_e164, created_at) VALUES (?, ?)")
+    .run(phone, Date.now());
+  dbClient.sqlite
+    .prepare("UPDATE users SET allowed_roles = ? WHERE id = ?")
+    .run(JSON.stringify(["buyer", "admin"]), auth.userId);
+
+  const switched = await app.inject({
+    method: "POST",
+    url: "/v1/me/role-switch",
+    headers: {
+      authorization: `Bearer ${auth.accessToken}`
+    },
+    payload: {
+      role: "admin"
+    }
+  });
+  expect(switched.statusCode).toBe(200);
+
+  return auth;
+}
+
 export async function createAuthenticatedSession(
   app: Awaited<ReturnType<typeof buildServer>>,
   smsProvider: TestSmsProvider,

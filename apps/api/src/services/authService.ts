@@ -129,6 +129,15 @@ export interface SwitchRoleInput {
   role: AuthRole;
 }
 
+export interface AdminAllowlistInput {
+  phoneE164: string;
+}
+
+export interface AdminAllowlistEntry {
+  phoneE164: string;
+  createdAt: number;
+}
+
 function toIso(timestampMs: number): string {
   return new Date(timestampMs).toISOString();
 }
@@ -429,6 +438,8 @@ export class AuthService {
       if (!user) {
         isNewUser = true;
         const userId = newId();
+        const isAdminAllowlisted = this.isAdminAllowlisted(phoneE164);
+        const allowedRoles = isAdminAllowlisted ? ["buyer", "admin"] : ["buyer"];
         this.sqlite
           .prepare(
             `
@@ -445,7 +456,7 @@ export class AuthService {
               VALUES (?, ?, ?, ?, ?, NULL, NULL, ?)
             `
           )
-          .run(userId, phoneE164, DEFAULT_TENANT_ID, JSON.stringify(["buyer"]), "buyer", now);
+          .run(userId, phoneE164, DEFAULT_TENANT_ID, JSON.stringify(allowedRoles), "buyer", now);
 
         user = this.sqlite
           .prepare("SELECT * FROM users WHERE id = ? LIMIT 1")
@@ -747,8 +758,41 @@ export class AuthService {
       throw new AuthError("forbidden_role_switch", "Requested role is not allowed for this user", 403);
     }
 
+    if (input.role === "admin" && !this.isAdminAllowlisted(user.phone_e164)) {
+      throw new AuthError("forbidden_role_switch", "Admin role is not allowed for this user", 403);
+    }
+
     this.sqlite.prepare("UPDATE users SET active_role = ? WHERE id = ?").run(input.role, user.id);
     return this.asAuthUser(this.getRequiredUserById(user.id));
+  }
+
+  isAdminAllowlisted(phoneE164: string): boolean {
+    const row = this.sqlite
+      .prepare("SELECT 1 FROM admin_allowlist WHERE phone_e164 = ? LIMIT 1")
+      .get(phoneE164) as { 1: number } | undefined;
+    return row !== undefined;
+  }
+
+  addAdminAllowlistEntry(input: AdminAllowlistInput): AdminAllowlistEntry {
+    const now = this.now();
+    this.sqlite
+      .prepare("INSERT OR IGNORE INTO admin_allowlist(phone_e164, created_at) VALUES (?, ?)")
+      .run(input.phoneE164, now);
+    return { phoneE164: input.phoneE164, createdAt: now };
+  }
+
+  removeAdminAllowlistEntry(phoneE164: string): boolean {
+    const result = this.sqlite
+      .prepare("DELETE FROM admin_allowlist WHERE phone_e164 = ?")
+      .run(phoneE164);
+    return result.changes > 0;
+  }
+
+  listAdminAllowlist(): AdminAllowlistEntry[] {
+    const rows = this.sqlite
+      .prepare("SELECT phone_e164, created_at FROM admin_allowlist ORDER BY created_at DESC")
+      .all() as Array<{ phone_e164: string; created_at: number }>;
+    return rows.map((row) => ({ phoneE164: row.phone_e164, createdAt: row.created_at }));
   }
 
   async authenticateAccessToken(accessToken: string): Promise<AuthUser> {
