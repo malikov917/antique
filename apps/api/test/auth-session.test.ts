@@ -29,7 +29,7 @@ describe("auth session api", () => {
     expect(response.statusCode).toBe(200);
     expect(response.json()).toMatchObject({
       status: "otp_sent",
-      retryAfterSec: 60
+      retryAfterSec: 30
     });
     expect(smsProvider.getLastCode("+14155552671")).toMatch(/^\d{6}$/);
 
@@ -94,6 +94,95 @@ describe("auth session api", () => {
     expect(third.statusCode).toBe(200);
     expect(third.json()).toMatchObject({
       status: "otp_sent"
+    });
+
+    await app.close();
+  });
+
+  it("enforces per-phone OTP request rate limit", async () => {
+    const smsProvider = new TestSmsProvider();
+    let now = Date.now();
+    const app = await buildServer({
+      config: buildTestConfig({
+        authOtpRequestPerPhonePerHour: 2,
+        authOtpCooldownSec: 1
+      }),
+      smsProvider,
+      muxClient: buildMockMuxClient(),
+      now: () => now
+    });
+
+    const phone = "+1 415 555 2671";
+
+    const first = await app.inject({
+      method: "POST",
+      url: "/v1/auth/otp/request",
+      payload: { phone }
+    });
+    expect(first.statusCode).toBe(200);
+
+    now += 2_000;
+    const second = await app.inject({
+      method: "POST",
+      url: "/v1/auth/otp/request",
+      payload: { phone }
+    });
+    expect(second.statusCode).toBe(200);
+
+    now += 2_000;
+    const third = await app.inject({
+      method: "POST",
+      url: "/v1/auth/otp/request",
+      payload: { phone }
+    });
+    expect(third.statusCode).toBe(429);
+    expect(third.json()).toMatchObject({
+      code: "otp_request_rate_limited"
+    });
+
+    await app.close();
+  });
+
+  it("enforces per-IP OTP request rate limit", async () => {
+    const smsProvider = new TestSmsProvider();
+    let now = Date.now();
+    const app = await buildServer({
+      config: buildTestConfig({
+        authOtpRequestPerIpPerHour: 2,
+        authOtpCooldownSec: 1
+      }),
+      smsProvider,
+      muxClient: buildMockMuxClient(),
+      now: () => now
+    });
+
+    const phone1 = "+1 415 555 2671";
+    const phone2 = "+1 415 555 2672";
+
+    const first = await app.inject({
+      method: "POST",
+      url: "/v1/auth/otp/request",
+      payload: { phone: phone1 }
+    });
+    expect(first.statusCode).toBe(200);
+
+    now += 2_000;
+    const second = await app.inject({
+      method: "POST",
+      url: "/v1/auth/otp/request",
+      payload: { phone: phone2 }
+    });
+    expect(second.statusCode).toBe(200);
+
+    now += 2_000;
+    const third = await app.inject({
+      method: "POST",
+      url: "/v1/auth/otp/request",
+      payload: { phone: phone1 }
+    });
+    expect(third.statusCode).toBe(429);
+    expect(third.json()).toMatchObject({
+      code: "otp_request_rate_limited"
     });
 
     await app.close();

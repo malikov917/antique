@@ -76,6 +76,8 @@ export async function buildServer(params: BuildServerParams): Promise<FastifyIns
       authOtpTtlSec: params.config.authOtpTtlSec,
       authOtpMaxAttempts: params.config.authOtpMaxAttempts,
       authOtpCooldownSec: params.config.authOtpCooldownSec,
+      authOtpRequestPerPhonePerHour: params.config.authOtpRequestPerPhonePerHour,
+      authOtpRequestPerIpPerHour: params.config.authOtpRequestPerIpPerHour,
       authOtpVerifyPerPhoneIpPerHour: params.config.authOtpVerifyPerPhoneIpPerHour
     },
     smsProvider,

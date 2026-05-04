@@ -164,15 +164,15 @@ export function loadConfig(): ApiConfig {
     ),
     authOtpTtlSec: parseNumberValue(process.env.AUTH_OTP_TTL_SEC, 5 * 60),
     authOtpMaxAttempts: parseNumberValue(process.env.AUTH_OTP_MAX_ATTEMPTS, 5),
-    authOtpCooldownSec: parseNumberValue(process.env.AUTH_OTP_COOLDOWN_SEC, 60),
+    authOtpCooldownSec: parseNumberValue(process.env.AUTH_OTP_COOLDOWN_SEC, 30),
     authOtpRequestPerPhonePerHour: parseNumberValue(
       process.env.AUTH_OTP_REQUEST_PER_PHONE_PER_HOUR,
-      5
+      10
     ),
-    authOtpRequestPerIpPerHour: parseNumberValue(process.env.AUTH_OTP_REQUEST_PER_IP_PER_HOUR, 30),
+    authOtpRequestPerIpPerHour: parseNumberValue(process.env.AUTH_OTP_REQUEST_PER_IP_PER_HOUR, 60),
     authOtpVerifyPerPhoneIpPerHour: parseNumberValue(
       process.env.AUTH_OTP_VERIFY_PER_PHONE_IP_PER_HOUR,
-      10
+      15
     ),
     offerSubmitPerUserPerHour: parseNumberValue(process.env.OFFER_SUBMIT_PER_USER_PER_HOUR, 30),
     offerDecisionPerSellerPerHour: parseNumberValue(

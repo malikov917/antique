@@ -78,6 +78,8 @@ export interface AuthRuntimeConfig {
   authOtpTtlSec: number;
   authOtpMaxAttempts: number;
   authOtpCooldownSec: number;
+  authOtpRequestPerPhonePerHour: number;
+  authOtpRequestPerIpPerHour: number;
   authOtpVerifyPerPhoneIpPerHour: number;
 }
 
@@ -231,6 +233,51 @@ export class AuthService {
           this.config.authOtpCooldownSec - sinceLastRequestSec
         );
       }
+    }
+
+    const hourAgo = now - 60 * 60 * 1000;
+    const ipHashValue = hashIp(input.ipAddress, this.config.authHashSecret);
+
+    const phoneRequestsRow = this.sqlite
+      .prepare(
+        `
+          SELECT COUNT(*) as total
+          FROM otp_challenges
+          WHERE phone_e164 = ?
+            AND created_at >= ?
+        `
+      )
+      .get(phoneE164, hourAgo) as { total: number } | undefined;
+
+    const phoneRequests = Number(phoneRequestsRow?.total ?? 0);
+    if (phoneRequests >= this.config.authOtpRequestPerPhonePerHour) {
+      throw new AuthError(
+        "otp_request_rate_limited",
+        "OTP request rate limit exceeded for this phone number",
+        429,
+        this.config.authOtpCooldownSec
+      );
+    }
+
+    const ipRequestsRow = this.sqlite
+      .prepare(
+        `
+          SELECT COUNT(*) as total
+          FROM otp_challenges
+          WHERE ip_hash = ?
+            AND created_at >= ?
+        `
+      )
+      .get(ipHashValue, hourAgo) as { total: number } | undefined;
+
+    const ipRequests = Number(ipRequestsRow?.total ?? 0);
+    if (ipRequests >= this.config.authOtpRequestPerIpPerHour) {
+      throw new AuthError(
+        "otp_request_rate_limited",
+        "OTP request rate limit exceeded for this IP address",
+        429,
+        this.config.authOtpCooldownSec
+      );
     }
 
     this.sqlite
