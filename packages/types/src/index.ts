@@ -15,6 +15,13 @@ export interface VideoFeedItem {
   status: UploadStatus;
   freshnessUpdatedAt?: string;
   freshnessAgeSec?: number;
+  listingId?: string;
+  title?: string;
+  listedPriceCents?: number;
+  currency?: string;
+  sellerUserId?: string;
+  listingStatus?: ListingStatus;
+  sessionStatus?: MarketSessionStatus;
 }
 
 export interface CreateUploadResponse {
@@ -287,6 +294,8 @@ export interface CreateListingRequest {
   description?: string;
   listedPriceCents: number;
   currency?: string;
+  playbackId?: string;
+  uploadId?: string;
 }
 
 export interface CreateListingResponse {
@@ -298,6 +307,8 @@ export interface UpdateListingRequest {
   description?: string;
   listedPriceCents?: number;
   currency?: string;
+  playbackId?: string;
+  uploadId?: string;
 }
 
 export interface UpdateListingResponse {

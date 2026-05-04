@@ -34,6 +34,8 @@ interface ListingRow {
   description: string;
   listed_price_cents: number;
   currency: string;
+  playback_id: string | null;
+  upload_id: string | null;
   created_at: number;
   updated_at: number;
 }
@@ -81,10 +83,12 @@ export class SqliteListingMutationDomainService implements ListingMutationDomain
             description,
             listed_price_cents,
             currency,
+            playback_id,
+            upload_id,
             created_at,
             updated_at
           )
-          VALUES (?, ?, ?, ?, 'live', ?, ?, ?, ?, ?, ?)
+          VALUES (?, ?, ?, ?, 'live', ?, ?, ?, ?, ?, ?, ?, ?)
         `
       )
       .run(
@@ -96,6 +100,8 @@ export class SqliteListingMutationDomainService implements ListingMutationDomain
         params.description,
         params.listedPriceCents,
         params.currency,
+        params.playbackId ?? null,
+        params.uploadId ?? null,
         timestamp,
         timestamp
       );
@@ -135,6 +141,8 @@ export class SqliteListingMutationDomainService implements ListingMutationDomain
     const nextDescription = params.description ?? listing.description;
     const nextListedPriceCents = params.listedPriceCents ?? listing.listed_price_cents;
     const nextCurrency = params.currency ?? listing.currency;
+    const nextPlaybackId = params.playbackId ?? listing.playback_id ?? null;
+    const nextUploadId = params.uploadId ?? listing.upload_id ?? null;
     const timestamp = this.now();
 
     this.sqlite
@@ -145,6 +153,8 @@ export class SqliteListingMutationDomainService implements ListingMutationDomain
               description = ?,
               listed_price_cents = ?,
               currency = ?,
+              playback_id = ?,
+              upload_id = ?,
               updated_at = ?
           WHERE id = ?
         `
@@ -154,6 +164,8 @@ export class SqliteListingMutationDomainService implements ListingMutationDomain
         nextDescription,
         nextListedPriceCents,
         nextCurrency,
+        nextPlaybackId,
+        nextUploadId,
         timestamp,
         params.listingId
       );

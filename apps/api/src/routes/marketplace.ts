@@ -148,6 +148,12 @@ export async function registerMarketplaceRoutes(
         if (body.currency !== undefined && typeof body.currency !== "string") {
           throw new AuthError("invalid_request", "currency must be a string", 400);
         }
+        if (body.playbackId !== undefined && typeof body.playbackId !== "string") {
+          throw new AuthError("invalid_request", "playbackId must be a string", 400);
+        }
+        if (body.uploadId !== undefined && typeof body.uploadId !== "string") {
+          throw new AuthError("invalid_request", "uploadId must be a string", 400);
+        }
 
         return {
           listing: deps.listingMutationService.createListing({
@@ -155,7 +161,9 @@ export async function registerMarketplaceRoutes(
             title: body.title.trim(),
             description: (body.description as string | undefined)?.trim() ?? "",
             listedPriceCents: body.listedPriceCents as number,
-            currency: ((body.currency as string | undefined) ?? "USD").trim().toUpperCase()
+            currency: ((body.currency as string | undefined) ?? "USD").trim().toUpperCase(),
+            playbackId: (body.playbackId as string | undefined)?.trim() || undefined,
+            uploadId: (body.uploadId as string | undefined)?.trim() || undefined
           })
         };
       } catch (error) {
@@ -181,7 +189,9 @@ export async function registerMarketplaceRoutes(
           body.title === undefined &&
           body.description === undefined &&
           body.listedPriceCents === undefined &&
-          body.currency === undefined
+          body.currency === undefined &&
+          body.playbackId === undefined &&
+          body.uploadId === undefined
         ) {
           throw new AuthError("invalid_request", "At least one listing field must be provided", 400);
         }
@@ -200,6 +210,12 @@ export async function registerMarketplaceRoutes(
         if (body.currency !== undefined && typeof body.currency !== "string") {
           throw new AuthError("invalid_request", "currency must be a string", 400);
         }
+        if (body.playbackId !== undefined && typeof body.playbackId !== "string") {
+          throw new AuthError("invalid_request", "playbackId must be a string", 400);
+        }
+        if (body.uploadId !== undefined && typeof body.uploadId !== "string") {
+          throw new AuthError("invalid_request", "uploadId must be a string", 400);
+        }
 
         return {
           listing: deps.listingMutationService.updateListing({
@@ -210,7 +226,9 @@ export async function registerMarketplaceRoutes(
             listedPriceCents:
               typeof body.listedPriceCents === "number" ? body.listedPriceCents : undefined,
             currency:
-              typeof body.currency === "string" ? body.currency.trim().toUpperCase() : undefined
+              typeof body.currency === "string" ? body.currency.trim().toUpperCase() : undefined,
+            playbackId: typeof body.playbackId === "string" ? body.playbackId.trim() : undefined,
+            uploadId: typeof body.uploadId === "string" ? body.uploadId.trim() : undefined
           })
         };
       } catch (error) {

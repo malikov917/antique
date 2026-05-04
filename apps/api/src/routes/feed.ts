@@ -4,11 +4,13 @@ import type { InMemoryVideoStore } from "../domain/store.js";
 import { AuthError } from "../auth/errors.js";
 import type { AuthService } from "../services/authService.js";
 import type { NotificationService } from "../services/notificationService.js";
+import type { ListingQueryDomainService } from "../domain/marketplace/contracts.js";
 
 export async function registerFeedRoutes(
   app: FastifyInstance,
   deps: {
     store: InMemoryVideoStore;
+    listingQueryService: ListingQueryDomainService;
     authService?: AuthService;
     notificationService?: NotificationService;
   }
@@ -29,8 +31,11 @@ export async function registerFeedRoutes(
       }
     }
 
+    const marketplaceItems = deps.listingQueryService.listFeedItems();
+    const items = marketplaceItems.length > 0 ? marketplaceItems : deps.store.allReadyFeedItems();
+
     const response: FeedResponse = {
-      items: deps.store.allReadyFeedItems(),
+      items,
       nextCursor: undefined
     };
     return response;

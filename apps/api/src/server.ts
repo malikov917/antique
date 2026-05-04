@@ -25,6 +25,7 @@ import { SellerApplicationService } from "./services/sellerApplicationService.js
 import { MarketplaceService } from "./services/marketplaceService.js";
 import { SqliteMarketSessionDomainService } from "./services/marketplace/sessionDomainService.js";
 import { SqliteListingMutationDomainService } from "./services/marketplace/listingMutationDomainService.js";
+import { SqliteListingQueryDomainService } from "./services/marketplace/listingQueryDomainService.js";
 import { SqliteDealDomainService } from "./services/dealDomainService.js";
 import { SqliteChatDomainService } from "./services/chatDomainService.js";
 import { SellerSalesService } from "./services/sellerSalesService.js";
@@ -93,6 +94,7 @@ export async function buildServer(params: BuildServerParams): Promise<FastifyIns
     },
     params.now
   );
+  const listingQueryService = new SqliteListingQueryDomainService(dbClient.sqlite);
   const marketplaceService = new MarketplaceService(
     dbClient.sqlite,
     {
@@ -201,7 +203,7 @@ export async function buildServer(params: BuildServerParams): Promise<FastifyIns
 
   app.get("/health", async () => ({ ok: true }));
   await registerUploadRoutes(app, { uploadLifecycle });
-  await registerFeedRoutes(app, { store, authService, notificationService });
+  await registerFeedRoutes(app, { store, listingQueryService, authService, notificationService });
   await registerAuthRoutes(app, {
     authService,
     otpVerifyIpRateLimitMax: params.config.authOtpVerifyPerPhoneIpPerHour

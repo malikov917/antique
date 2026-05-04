@@ -613,6 +613,12 @@ export function initializeDatabase(sqlite: Database): void {
   if (!listingColumns.some((column) => column.name === "currency")) {
     sqlite.exec("ALTER TABLE listings ADD COLUMN currency TEXT NOT NULL DEFAULT 'USD'");
   }
+  if (!listingColumns.some((column) => column.name === "playback_id")) {
+    sqlite.exec("ALTER TABLE listings ADD COLUMN playback_id TEXT");
+  }
+  if (!listingColumns.some((column) => column.name === "upload_id")) {
+    sqlite.exec("ALTER TABLE listings ADD COLUMN upload_id TEXT");
+  }
 
   const basketItemColumns = sqlite.prepare("PRAGMA table_info(basket_items)").all() as Array<{
     name: string;
