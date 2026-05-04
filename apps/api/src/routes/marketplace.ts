@@ -22,7 +22,8 @@ import type {
   OpenMarketSessionResponse,
   SellerListingOffersResponse,
   UpdateListingRequest,
-  UpdateListingResponse
+  UpdateListingResponse,
+  ListingAvailability
 } from "@antique/types";
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import { AuthError } from "../auth/errors.js";
@@ -154,6 +155,17 @@ export async function registerMarketplaceRoutes(
         if (body.uploadId !== undefined && typeof body.uploadId !== "string") {
           throw new AuthError("invalid_request", "uploadId must be a string", 400);
         }
+        if (
+          body.availability !== undefined &&
+          body.availability !== "in_stock" &&
+          body.availability !== "out_of_stock"
+        ) {
+          throw new AuthError(
+            "invalid_request",
+            "availability must be one of: in_stock, out_of_stock",
+            400
+          );
+        }
 
         return {
           listing: deps.listingMutationService.createListing({
@@ -163,7 +175,8 @@ export async function registerMarketplaceRoutes(
             listedPriceCents: body.listedPriceCents as number,
             currency: ((body.currency as string | undefined) ?? "USD").trim().toUpperCase(),
             playbackId: (body.playbackId as string | undefined)?.trim() || undefined,
-            uploadId: (body.uploadId as string | undefined)?.trim() || undefined
+            uploadId: (body.uploadId as string | undefined)?.trim() || undefined,
+            availability: body.availability as ListingAvailability | undefined
           })
         };
       } catch (error) {
@@ -216,6 +229,17 @@ export async function registerMarketplaceRoutes(
         if (body.uploadId !== undefined && typeof body.uploadId !== "string") {
           throw new AuthError("invalid_request", "uploadId must be a string", 400);
         }
+        if (
+          body.availability !== undefined &&
+          body.availability !== "in_stock" &&
+          body.availability !== "out_of_stock"
+        ) {
+          throw new AuthError(
+            "invalid_request",
+            "availability must be one of: in_stock, out_of_stock",
+            400
+          );
+        }
 
         return {
           listing: deps.listingMutationService.updateListing({
@@ -228,7 +252,8 @@ export async function registerMarketplaceRoutes(
             currency:
               typeof body.currency === "string" ? body.currency.trim().toUpperCase() : undefined,
             playbackId: typeof body.playbackId === "string" ? body.playbackId.trim() : undefined,
-            uploadId: typeof body.uploadId === "string" ? body.uploadId.trim() : undefined
+            uploadId: typeof body.uploadId === "string" ? body.uploadId.trim() : undefined,
+            availability: body.availability as ListingAvailability | undefined
           })
         };
       } catch (error) {

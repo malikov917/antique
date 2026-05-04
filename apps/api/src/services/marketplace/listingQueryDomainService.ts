@@ -12,7 +12,8 @@ interface FeedListingRow {
   currency: string;
   created_at: number;
   listing_status: string;
-  session_status: string;
+  session_status: string | null;
+  availability: string;
   author: string | null;
 }
 
@@ -33,14 +34,14 @@ export class SqliteListingQueryDomainService implements ListingQueryDomainServic
             listings.currency,
             listings.created_at,
             listings.status AS listing_status,
+            listings.availability,
             market_sessions.status AS session_status,
             users.display_name AS author
           FROM listings
-          INNER JOIN market_sessions ON market_sessions.id = listings.market_session_id
+          LEFT JOIN market_sessions ON market_sessions.id = listings.market_session_id
           INNER JOIN users ON users.id = listings.seller_user_id
           WHERE listings.status = 'live'
             AND listings.playback_id IS NOT NULL
-            AND market_sessions.status = 'open'
           ORDER BY listings.created_at DESC
         `
       )
@@ -62,7 +63,8 @@ export class SqliteListingQueryDomainService implements ListingQueryDomainServic
       currency: row.currency,
       sellerUserId: row.seller_user_id,
       listingStatus: row.listing_status as "live" | "day_closed" | "sold" | "withdrawn",
-      sessionStatus: row.session_status as "open" | "closed"
+      sessionStatus: row.session_status as "open" | "closed" | null,
+      availability: row.availability as "in_stock" | "out_of_stock"
     }));
   }
 }

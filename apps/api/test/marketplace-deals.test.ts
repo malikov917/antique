@@ -159,6 +159,51 @@ describe("marketplace deals api", () => {
     await app.close();
   });
 
+  it("blocks basket and offer mutations for out_of_stock listings", async () => {
+    const smsProvider = new TestSmsProvider();
+    const dbClient = createDatabaseClient(":memory:");
+    const app = await buildServer({
+      config: buildTestConfig(),
+      smsProvider,
+      muxClient: buildMockMuxClient(),
+      dbClient
+    });
+
+    const seller = await createAuthenticatedSeller(app, smsProvider, dbClient, "+14155552678");
+    const buyer = await createAuthenticatedUser(app, smsProvider, "+14155552679");
+
+    const createResponse = await app.inject({
+      method: "POST",
+      url: "/v1/listings",
+      headers: { authorization: `Bearer ${seller.accessToken}` },
+      payload: {
+        title: "Out of Stock Item",
+        listedPriceCents: 10000,
+        availability: "out_of_stock"
+      }
+    });
+    const listingId = createResponse.json().listing.id as string;
+
+    const basketResponse = await app.inject({
+      method: "POST",
+      url: `/v1/listings/${listingId}/basket`,
+      headers: { authorization: `Bearer ${buyer.accessToken}` }
+    });
+    expect(basketResponse.statusCode).toBe(409);
+    expect(basketResponse.json()).toMatchObject({ code: "listing_out_of_stock" });
+
+    const offerResponse = await app.inject({
+      method: "POST",
+      url: `/v1/listings/${listingId}/offers`,
+      headers: { authorization: `Bearer ${buyer.accessToken}` },
+      payload: { amountCents: 10000, shippingAddress: "123 Antique Row" }
+    });
+    expect(offerResponse.statusCode).toBe(409);
+    expect(offerResponse.json()).toMatchObject({ code: "listing_out_of_stock" });
+
+    await app.close();
+  });
+
   it("creates basket item and persists shipping snapshot on offer submit", async () => {
     const smsProvider = new TestSmsProvider();
     const dbClient = createDatabaseClient(":memory:");
@@ -237,7 +282,7 @@ describe("marketplace deals api", () => {
     await app.close();
   });
 
-  it("allows sellers to create and update listings only during open market sessions", async () => {
+  it("allows sellers to create and update listings without requiring an open market session", async () => {
     const smsProvider = new TestSmsProvider();
     const dbClient = createDatabaseClient(":memory:");
     const app = await buildServer({
@@ -261,9 +306,15 @@ describe("marketplace deals api", () => {
         listedPriceCents: 15000
       }
     });
-    expect(withoutSession.statusCode).toBe(409);
+    expect(withoutSession.statusCode).toBe(200);
     expect(withoutSession.json()).toMatchObject({
-      code: "market_session_not_open"
+      listing: {
+        sellerUserId: seller.userId,
+        status: "live",
+        availability: "in_stock",
+        title: "No Session Reel",
+        listedPriceCents: 15000
+      }
     });
 
     const openResponse = await app.inject({
@@ -297,6 +348,7 @@ describe("marketplace deals api", () => {
         sellerUserId: seller.userId,
         marketSessionId: sessionId,
         status: "live",
+        availability: "in_stock",
         title: "Vintage Camera Reel",
         listedPriceCents: 23000,
         currency: "USD"
@@ -311,7 +363,8 @@ describe("marketplace deals api", () => {
       },
       payload: {
         title: "Vintage Camera Reel (Updated)",
-        listedPriceCents: 26000
+        listedPriceCents: 26000,
+        availability: "out_of_stock"
       }
     });
     expect(updateResponse.statusCode).toBe(200);
@@ -319,7 +372,8 @@ describe("marketplace deals api", () => {
       listing: {
         id: listingId,
         title: "Vintage Camera Reel (Updated)",
-        listedPriceCents: 26000
+        listedPriceCents: 26000,
+        availability: "out_of_stock"
       }
     });
 
@@ -343,7 +397,7 @@ describe("marketplace deals api", () => {
     });
     expect(updateAfterClose.statusCode).toBe(409);
     expect(updateAfterClose.json()).toMatchObject({
-      code: "market_session_not_open"
+      code: "listing_unavailable"
     });
 
     await app.close();
