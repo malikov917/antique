@@ -225,6 +225,27 @@ export interface RoleSwitchResponse {
   user: AuthUser;
 }
 
+export interface AdminAllowlistEntry {
+  phoneE164: string;
+  createdAt: string;
+}
+
+export interface AdminAllowlistResponse {
+  entries: AdminAllowlistEntry[];
+}
+
+export interface AddAdminAllowlistRequest {
+  phoneE164: string;
+}
+
+export interface AddAdminAllowlistResponse {
+  entry: AdminAllowlistEntry;
+}
+
+export interface RemoveAdminAllowlistResponse {
+  removed: boolean;
+}
+
 export type MarketSessionStatus = "open" | "closed";
 
 export interface MarketSession {

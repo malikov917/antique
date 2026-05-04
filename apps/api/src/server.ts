@@ -13,6 +13,7 @@ import { registerMarketplaceRoutes } from "./routes/marketplace.js";
 import { registerTrustSafetyRoutes } from "./routes/trustSafety.js";
 import { registerNotificationRoutes } from "./routes/notifications.js";
 import { registerObservabilityRoutes } from "./routes/observability.js";
+import { registerAdminGovernanceRoutes } from "./routes/adminGovernance.js";
 import { type ApiConfig } from "./config.js";
 import { createDatabaseClient, type DatabaseClient } from "./db/client.js";
 import { initializeDatabase } from "./db/init.js";
@@ -223,6 +224,7 @@ export async function buildServer(params: BuildServerParams): Promise<FastifyIns
     authService,
     observabilityService
   });
+  await registerAdminGovernanceRoutes(app, { authService });
   await registerMarketplaceRoutes(app, {
     authService,
     marketSessionService,

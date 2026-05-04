@@ -565,6 +565,11 @@ export function initializeDatabase(sqlite: Database): void {
 
     CREATE INDEX IF NOT EXISTS idx_retention_purge_runs_started_at
       ON retention_purge_runs(started_at DESC);
+
+    CREATE TABLE IF NOT EXISTS admin_allowlist (
+      phone_e164 TEXT PRIMARY KEY,
+      created_at INTEGER NOT NULL
+    );
   `);
 
   const userColumns = sqlite.prepare("PRAGMA table_info(users)").all() as Array<{ name: string }>;
