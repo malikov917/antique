@@ -32,6 +32,8 @@ export interface CreateOfferInput {
   requestIp?: string;
 }
 
+import type { ListingAvailability } from "@antique/types";
+
 export interface CreateListingInput {
   sellerUserId: string;
   title: string;
@@ -40,6 +42,7 @@ export interface CreateListingInput {
   currency: string;
   playbackId?: string;
   uploadId?: string;
+  availability?: ListingAvailability;
 }
 
 export interface UpdateListingInput {
@@ -51,6 +54,7 @@ export interface UpdateListingInput {
   currency?: string;
   playbackId?: string;
   uploadId?: string;
+  availability?: ListingAvailability;
 }
 
 export interface MarketSessionDomainService {

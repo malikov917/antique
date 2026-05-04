@@ -90,8 +90,9 @@ function validateTenantMaterialization(sqlite: Database): void {
     `
       SELECT COUNT(*) AS count
       FROM listings
-      JOIN market_sessions ON market_sessions.id = listings.market_session_id
-      WHERE listings.tenant_id != market_sessions.tenant_id
+      LEFT JOIN market_sessions ON market_sessions.id = listings.market_session_id
+      WHERE listings.market_session_id IS NOT NULL
+        AND listings.tenant_id != market_sessions.tenant_id
     `,
     "tenant_materialization_mismatch:listings_vs_market_sessions"
   );
@@ -251,9 +252,10 @@ export function initializeDatabase(sqlite: Database): void {
     CREATE TABLE IF NOT EXISTS listings (
       id TEXT PRIMARY KEY,
       seller_user_id TEXT NOT NULL,
-      market_session_id TEXT NOT NULL,
+      market_session_id TEXT,
       tenant_id TEXT,
       status TEXT NOT NULL,
+      availability TEXT NOT NULL DEFAULT 'in_stock',
       title TEXT NOT NULL DEFAULT '',
       description TEXT NOT NULL DEFAULT '',
       listed_price_cents INTEGER NOT NULL DEFAULT 1,
@@ -268,6 +270,8 @@ export function initializeDatabase(sqlite: Database): void {
       ON listings(market_session_id, status);
     CREATE INDEX IF NOT EXISTS idx_listings_tenant_status_created
       ON listings(tenant_id, status, created_at DESC);
+    CREATE INDEX IF NOT EXISTS idx_listings_availability
+      ON listings(availability);
 
     CREATE TABLE IF NOT EXISTS basket_items (
       id TEXT PRIMARY KEY,
@@ -618,6 +622,47 @@ export function initializeDatabase(sqlite: Database): void {
   }
   if (!listingColumns.some((column) => column.name === "upload_id")) {
     sqlite.exec("ALTER TABLE listings ADD COLUMN upload_id TEXT");
+  }
+  if (!listingColumns.some((column) => column.name === "availability")) {
+    sqlite.exec("PRAGMA foreign_keys = OFF");
+    sqlite.exec("ALTER TABLE listings RENAME TO listings_old");
+    sqlite.exec(`
+      CREATE TABLE listings (
+        id TEXT PRIMARY KEY,
+        seller_user_id TEXT NOT NULL,
+        market_session_id TEXT,
+        tenant_id TEXT,
+        status TEXT NOT NULL,
+        availability TEXT NOT NULL DEFAULT 'in_stock',
+        title TEXT NOT NULL DEFAULT '',
+        description TEXT NOT NULL DEFAULT '',
+        listed_price_cents INTEGER NOT NULL DEFAULT 1,
+        currency TEXT NOT NULL DEFAULT 'USD',
+        playback_id TEXT,
+        upload_id TEXT,
+        created_at INTEGER NOT NULL,
+        updated_at INTEGER NOT NULL,
+        FOREIGN KEY (seller_user_id) REFERENCES users(id),
+        FOREIGN KEY (market_session_id) REFERENCES market_sessions(id)
+      )
+    `);
+    sqlite.exec(`
+      INSERT INTO listings (
+        id, seller_user_id, market_session_id, tenant_id, status, availability,
+        title, description, listed_price_cents, currency,
+        playback_id, upload_id, created_at, updated_at
+      )
+      SELECT
+        id, seller_user_id, market_session_id, tenant_id, status, 'in_stock',
+        title, description, listed_price_cents, currency,
+        playback_id, upload_id, created_at, updated_at
+      FROM listings_old
+    `);
+    sqlite.exec("DROP TABLE listings_old");
+    sqlite.exec("PRAGMA foreign_keys = ON");
+    sqlite.exec("CREATE INDEX IF NOT EXISTS idx_listings_session_status ON listings(market_session_id, status)");
+    sqlite.exec("CREATE INDEX IF NOT EXISTS idx_listings_tenant_status_created ON listings(tenant_id, status, created_at DESC)");
+    sqlite.exec("CREATE INDEX IF NOT EXISTS idx_listings_availability ON listings(availability)");
   }
 
   const basketItemColumns = sqlite.prepare("PRAGMA table_info(basket_items)").all() as Array<{

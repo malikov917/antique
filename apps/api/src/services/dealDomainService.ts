@@ -29,7 +29,7 @@ interface OfferRow {
 interface OfferContextRow extends OfferRow {
   seller_user_id: string;
   listing_status: ListingStatus;
-  session_status: MarketSessionStatus;
+  session_status: MarketSessionStatus | null;
 }
 
 interface DealRow {
@@ -695,7 +695,7 @@ export class SqliteDealDomainService implements DealDomainService {
             market_sessions.status AS session_status
           FROM offers
           INNER JOIN listings ON listings.id = offers.listing_id
-          INNER JOIN market_sessions ON market_sessions.id = listings.market_session_id
+          LEFT JOIN market_sessions ON market_sessions.id = listings.market_session_id
           WHERE offers.id = ?
           LIMIT 1
         `
@@ -1201,13 +1201,6 @@ export class SqliteDealDomainService implements DealDomainService {
 
   private assertListingCanBeDecided(context: OfferContextRow): void {
     if (context.listing_status === "withdrawn" || context.listing_status === "day_closed") {
-      throw new AuthError(
-        "listing_unavailable",
-        "Listing is not in a state that allows offer decisions",
-        409
-      );
-    }
-    if (context.session_status !== "open" && context.listing_status !== "sold") {
       throw new AuthError(
         "listing_unavailable",
         "Listing is not in a state that allows offer decisions",

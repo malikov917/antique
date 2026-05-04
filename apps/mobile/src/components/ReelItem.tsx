@@ -17,18 +17,19 @@ function formatPrice(cents: number | undefined, currency: string | undefined): s
 }
 
 function BuyabilityPill({ item }: { item: ReelPlayableItem }) {
-  if (!item.listingStatus || !item.sessionStatus) {
+  if (!item.listingStatus) {
     return null;
   }
 
-  const isOpen = item.listingStatus === "live" && item.sessionStatus === "open";
-  const label = isOpen ? "Open to offers" : "Unavailable";
+  const availability = item.availability ?? "in_stock";
+  const isAvailable = item.listingStatus === "live" && availability === "in_stock";
+  const label = isAvailable ? "In stock" : "Out of stock";
 
   return (
     <View
       style={[
         styles.buyabilityPill,
-        isOpen ? styles.buyabilityOpen : styles.buyabilityPaused
+        isAvailable ? styles.buyabilityOpen : styles.buyabilityPaused
       ]}
     >
       <Text style={styles.buyabilityText}>{label}</Text>

@@ -1,5 +1,5 @@
 import type { Database } from "better-sqlite3";
-import type { BasketItem, Listing, ListingStatus, MarketSessionStatus, Offer } from "@antique/types";
+import type { BasketItem, Listing, ListingAvailability, ListingStatus, Offer } from "@antique/types";
 import { MIN_OFFER_RULE } from "@antique/types";
 import { newId } from "../../auth/crypto.js";
 import { AuthError } from "../../auth/errors.js";
@@ -21,15 +21,16 @@ interface ListingAvailabilityRow {
   seller_user_id: string;
   tenant_id: string | null;
   status: ListingStatus;
-  session_status: MarketSessionStatus;
+  availability: ListingAvailability;
   listed_price_cents: number;
 }
 
 interface ListingRow {
   id: string;
   seller_user_id: string;
-  market_session_id: string;
+  market_session_id: string | null;
   status: ListingStatus;
+  availability: ListingAvailability;
   title: string;
   description: string;
   listed_price_cents: number;
@@ -50,6 +51,7 @@ function toListing(row: ListingRow): Listing {
     sellerUserId: row.seller_user_id,
     marketSessionId: row.market_session_id,
     status: row.status,
+    availability: row.availability,
     title: row.title,
     description: row.description,
     listedPriceCents: row.listed_price_cents,
@@ -67,9 +69,11 @@ export class SqliteListingMutationDomainService implements ListingMutationDomain
   ) {}
 
   createListing(params: CreateListingInput): Listing {
-    const session = this.requireOpenSessionForSeller(params.sellerUserId);
+    const session = this.findSessionForSeller(params.sellerUserId);
     const timestamp = this.now();
     const id = newId();
+    const tenantId = session?.tenant_id ?? this.resolveUserTenantId(params.sellerUserId);
+    const availability = params.availability ?? "in_stock";
     this.sqlite
       .prepare(
         `
@@ -79,6 +83,7 @@ export class SqliteListingMutationDomainService implements ListingMutationDomain
             market_session_id,
             tenant_id,
             status,
+            availability,
             title,
             description,
             listed_price_cents,
@@ -88,14 +93,15 @@ export class SqliteListingMutationDomainService implements ListingMutationDomain
             created_at,
             updated_at
           )
-          VALUES (?, ?, ?, ?, 'live', ?, ?, ?, ?, ?, ?, ?, ?)
+          VALUES (?, ?, ?, ?, 'live', ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `
       )
       .run(
         id,
         params.sellerUserId,
-        session.id,
-        session.tenant_id ?? this.resolveUserTenantId(params.sellerUserId),
+        session?.id ?? null,
+        tenantId,
+        availability,
         params.title,
         params.description,
         params.listedPriceCents,
@@ -131,8 +137,6 @@ export class SqliteListingMutationDomainService implements ListingMutationDomain
       throw new AuthError("forbidden_owner_mismatch", "Listing does not belong to seller", 403);
     }
 
-    this.requireOpenSessionForSeller(params.sellerUserId);
-
     if (listing.status !== "live") {
       throw new AuthError("listing_unavailable", "Listing cannot be updated in current state", 409);
     }
@@ -143,6 +147,7 @@ export class SqliteListingMutationDomainService implements ListingMutationDomain
     const nextCurrency = params.currency ?? listing.currency;
     const nextPlaybackId = params.playbackId ?? listing.playback_id ?? null;
     const nextUploadId = params.uploadId ?? listing.upload_id ?? null;
+    const nextAvailability = params.availability ?? listing.availability;
     const timestamp = this.now();
 
     this.sqlite
@@ -155,6 +160,7 @@ export class SqliteListingMutationDomainService implements ListingMutationDomain
               currency = ?,
               playback_id = ?,
               upload_id = ?,
+              availability = ?,
               updated_at = ?
           WHERE id = ?
         `
@@ -166,6 +172,7 @@ export class SqliteListingMutationDomainService implements ListingMutationDomain
         nextCurrency,
         nextPlaybackId,
         nextUploadId,
+        nextAvailability,
         timestamp,
         params.listingId
       );
@@ -271,10 +278,9 @@ export class SqliteListingMutationDomainService implements ListingMutationDomain
             listings.seller_user_id,
             listings.tenant_id,
             listings.status,
-            listings.listed_price_cents,
-            market_sessions.status AS session_status
+            listings.availability,
+            listings.listed_price_cents
           FROM listings
-          INNER JOIN market_sessions ON market_sessions.id = listings.market_session_id
           WHERE listings.id = ?
           LIMIT 1
         `
@@ -284,7 +290,10 @@ export class SqliteListingMutationDomainService implements ListingMutationDomain
     if (!row) {
       throw new AuthError("listing_not_found", "Listing was not found", 404);
     }
-    if (row.status === "day_closed" || row.session_status === "closed") {
+    if (row.availability === "out_of_stock") {
+      throw new AuthError("listing_out_of_stock", "Listing is currently out of stock", 409);
+    }
+    if (row.status === "day_closed") {
       throw new AuthError("listing_day_closed", "Listing is not accepting basket or offer mutations", 409);
     }
     if (row.status === "sold" || row.status === "withdrawn") {
@@ -311,10 +320,10 @@ export class SqliteListingMutationDomainService implements ListingMutationDomain
     return row.tenant_id;
   }
 
-  private requireOpenSessionForSeller(sellerUserId: string): {
+  private findSessionForSeller(sellerUserId: string): {
     id: string;
     tenant_id: string | null;
-  } {
+  } | undefined {
     const session = this.sqlite
       .prepare(
         `
@@ -327,10 +336,6 @@ export class SqliteListingMutationDomainService implements ListingMutationDomain
         `
       )
       .get(sellerUserId) as { id: string; tenant_id: string | null } | undefined;
-
-    if (!session) {
-      throw new AuthError("market_session_not_open", "Seller must have an open market session", 409);
-    }
     return session;
   }
 

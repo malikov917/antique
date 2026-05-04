@@ -21,7 +21,8 @@ export interface VideoFeedItem {
   currency?: string;
   sellerUserId?: string;
   listingStatus?: ListingStatus;
-  sessionStatus?: MarketSessionStatus;
+  sessionStatus?: MarketSessionStatus | null;
+  availability?: ListingAvailability;
 }
 
 export interface CreateUploadResponse {
@@ -276,11 +277,14 @@ export interface CloseMarketSessionResponse {
 
 export type ListingStatus = "live" | "day_closed" | "sold" | "withdrawn";
 
+export type ListingAvailability = "in_stock" | "out_of_stock";
+
 export interface Listing {
   id: string;
   sellerUserId: string;
-  marketSessionId: string;
+  marketSessionId: string | null;
   status: ListingStatus;
+  availability: ListingAvailability;
   title: string;
   description: string;
   listedPriceCents: number;
@@ -296,6 +300,7 @@ export interface CreateListingRequest {
   currency?: string;
   playbackId?: string;
   uploadId?: string;
+  availability?: ListingAvailability;
 }
 
 export interface CreateListingResponse {
@@ -309,6 +314,7 @@ export interface UpdateListingRequest {
   currency?: string;
   playbackId?: string;
   uploadId?: string;
+  availability?: ListingAvailability;
 }
 
 export interface UpdateListingResponse {
