@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { ActivityIndicator, Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import type { ChatMessage, Deal } from "@antique/types";
 import { useAuthSession } from "../auth/session";
 import { type InboxItem, useInboxTimeline } from "../hooks/useInboxTimeline";
@@ -25,6 +26,7 @@ function canResolveCorrection(deal: Deal | null, perspective: "buyer" | "seller"
 }
 
 export function InboxScreen() {
+  const insets = useSafeAreaInsets();
   const { accessToken } = useAuthSession();
   const { items, loading, error, refresh } = useInboxTimeline(accessToken);
   const [actionError, setActionError] = useState<string | null>(null);
@@ -172,7 +174,7 @@ export function InboxScreen() {
   }
 
   return (
-    <ScrollView style={styles.root} contentContainerStyle={styles.content} testID="inbox-screen">
+    <ScrollView style={styles.root} contentContainerStyle={[styles.content, { paddingTop: insets.top + 18 }]} testID="inbox-screen">
       <Text style={styles.heading}>Inbox</Text>
       {error ? <Text style={styles.errorText}>{error}</Text> : null}
       {actionError ? <Text style={styles.errorText}>{actionError}</Text> : null}

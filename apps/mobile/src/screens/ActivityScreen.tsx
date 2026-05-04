@@ -1,6 +1,7 @@
 import { ActivityIndicator, FlatList, StyleSheet, Text, View } from "react-native";
 import { Pressable } from "react-native";
 import { useRouter } from "expo-router";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import type { NotificationItem } from "@antique/types";
 import { useAuthSession } from "../auth/session";
 import { useNotifications } from "../hooks/useNotifications";
@@ -56,6 +57,7 @@ function toLabel(type: NotificationItem["type"]): string {
 
 export function ActivityScreen() {
   const router = useRouter();
+  const insets = useSafeAreaInsets();
   const { accessToken } = useAuthSession();
   const { notifications, announcements, loading, error } = useNotifications(accessToken);
 
@@ -90,7 +92,7 @@ export function ActivityScreen() {
   return (
     <FlatList
       style={styles.root}
-      contentContainerStyle={styles.content}
+      contentContainerStyle={[styles.content, { paddingTop: insets.top + 18 }]}
       testID="activity-screen"
       data={entries}
       keyExtractor={(item) => `${item.kind}-${item.id}`}
