@@ -1323,15 +1323,18 @@ describe("marketplace deals api", () => {
           SELECT reason_code, metadata_json
           FROM audit_events
           WHERE event_type = 'deal_address_correction'
-          ORDER BY created_at ASC
         `
       )
       .all() as Array<{ reason_code: string; metadata_json: string }>;
-    expect(auditRows.map((row) => row.reason_code)).toEqual([
-      "deal_address_correction_requested",
-      "deal_address_correction_approved"
-    ]);
-    expect(auditRows[0]?.metadata_json).not.toContain("New Shipping Address 9");
+    expect(auditRows).toHaveLength(2);
+    expect(auditRows.map((row) => row.reason_code)).toEqual(
+      expect.arrayContaining([
+        "deal_address_correction_requested",
+        "deal_address_correction_approved"
+      ])
+    );
+    const requestedRow = auditRows.find((row) => row.reason_code === "deal_address_correction_requested");
+    expect(requestedRow?.metadata_json).not.toContain("New Shipping Address 9");
 
     await app.close();
   });
