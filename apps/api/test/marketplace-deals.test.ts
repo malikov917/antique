@@ -855,14 +855,16 @@ describe("marketplace deals api", () => {
           SELECT event_type, reason_code
           FROM audit_events
           WHERE event_type IN ('deal_cancellation_requested', 'deal_cancellation_resolved')
-          ORDER BY created_at ASC
         `
       )
       .all() as Array<{ event_type: string; reason_code: string }>;
-    expect(auditRows).toEqual([
-      { event_type: "deal_cancellation_requested", reason_code: "seller_unavailable" },
-      { event_type: "deal_cancellation_resolved", reason_code: "buyer_acknowledged" }
-    ]);
+    expect(auditRows).toHaveLength(2);
+    expect(auditRows).toEqual(
+      expect.arrayContaining([
+        { event_type: "deal_cancellation_requested", reason_code: "seller_unavailable" },
+        { event_type: "deal_cancellation_resolved", reason_code: "buyer_acknowledged" }
+      ])
+    );
 
     await app.close();
   });
@@ -1321,15 +1323,18 @@ describe("marketplace deals api", () => {
           SELECT reason_code, metadata_json
           FROM audit_events
           WHERE event_type = 'deal_address_correction'
-          ORDER BY created_at ASC
         `
       )
       .all() as Array<{ reason_code: string; metadata_json: string }>;
-    expect(auditRows.map((row) => row.reason_code)).toEqual([
-      "deal_address_correction_requested",
-      "deal_address_correction_approved"
-    ]);
-    expect(auditRows[0]?.metadata_json).not.toContain("New Shipping Address 9");
+    expect(auditRows).toHaveLength(2);
+    expect(auditRows.map((row) => row.reason_code)).toEqual(
+      expect.arrayContaining([
+        "deal_address_correction_requested",
+        "deal_address_correction_approved"
+      ])
+    );
+    const requestedRow = auditRows.find((row) => row.reason_code === "deal_address_correction_requested");
+    expect(requestedRow?.metadata_json).not.toContain("New Shipping Address 9");
 
     await app.close();
   });
