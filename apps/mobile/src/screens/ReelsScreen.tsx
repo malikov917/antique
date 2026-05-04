@@ -55,10 +55,6 @@ export function ReelsScreen() {
     }
   );
 
-  const scrollToTop = useCallback(() => {
-    feedListRef.current?.scrollToIndex({ index: 0, animated: true });
-  }, []);
-
   const renderItem = useCallback(
     ({ item, index }: { item: FeedEntry; index: number }) => {
       return item.kind === "reel" ? <ReelItem item={item.reel} active={index === activeIndex} itemIndex={index} /> : null;
@@ -158,7 +154,7 @@ export function ReelsScreen() {
                 refresh();
               }}
             />
-          </Pressable>
+          </View>
         </Pressable>
       </Modal>
     </View>
