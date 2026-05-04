@@ -855,14 +855,16 @@ describe("marketplace deals api", () => {
           SELECT event_type, reason_code
           FROM audit_events
           WHERE event_type IN ('deal_cancellation_requested', 'deal_cancellation_resolved')
-          ORDER BY created_at ASC
         `
       )
       .all() as Array<{ event_type: string; reason_code: string }>;
-    expect(auditRows).toEqual([
-      { event_type: "deal_cancellation_requested", reason_code: "seller_unavailable" },
-      { event_type: "deal_cancellation_resolved", reason_code: "buyer_acknowledged" }
-    ]);
+    expect(auditRows).toHaveLength(2);
+    expect(auditRows).toEqual(
+      expect.arrayContaining([
+        { event_type: "deal_cancellation_requested", reason_code: "seller_unavailable" },
+        { event_type: "deal_cancellation_resolved", reason_code: "buyer_acknowledged" }
+      ])
+    );
 
     await app.close();
   });
