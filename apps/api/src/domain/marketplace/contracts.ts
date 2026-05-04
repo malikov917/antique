@@ -38,6 +38,8 @@ export interface CreateListingInput {
   description: string;
   listedPriceCents: number;
   currency: string;
+  playbackId?: string;
+  uploadId?: string;
 }
 
 export interface UpdateListingInput {
@@ -47,6 +49,8 @@ export interface UpdateListingInput {
   description?: string;
   listedPriceCents?: number;
   currency?: string;
+  playbackId?: string;
+  uploadId?: string;
 }
 
 export interface MarketSessionDomainService {
@@ -104,4 +108,9 @@ export interface ChatDomainService {
   listChatMessages(params: { userId: string; chatId: string }): ChatMessage[];
   createChatMessage(params: { userId: string; chatId: string; text: string }): ChatMessage;
 }
+
+export interface ListingQueryDomainService {
+  listFeedItems(): import("@antique/types").VideoFeedItem[];
+}
+
 export interface NotificationDomainService {}

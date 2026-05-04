@@ -8,6 +8,34 @@ import { ReelProgressBar } from "./ReelProgressBar";
 
 const { height, width } = Dimensions.get("window");
 
+function formatPrice(cents: number | undefined, currency: string | undefined): string {
+  if (typeof cents !== "number" || !currency) {
+    return "";
+  }
+  const amount = (cents / 100).toFixed(2);
+  return `${currency} ${amount}`;
+}
+
+function BuyabilityPill({ item }: { item: ReelPlayableItem }) {
+  if (!item.listingStatus || !item.sessionStatus) {
+    return null;
+  }
+
+  const isOpen = item.listingStatus === "live" && item.sessionStatus === "open";
+  const label = isOpen ? "Open to offers" : "Unavailable";
+
+  return (
+    <View
+      style={[
+        styles.buyabilityPill,
+        isOpen ? styles.buyabilityOpen : styles.buyabilityPaused
+      ]}
+    >
+      <Text style={styles.buyabilityText}>{label}</Text>
+    </View>
+  );
+}
+
 export function ReelItem({
   item,
   active,
@@ -43,8 +71,13 @@ export function ReelItem({
               onScrubEnd={playback.endScrub}
               testID={`reel-progress-${itemIndex}`}
             />
+            <BuyabilityPill item={item} />
             <Text style={styles.freshness}>{formatFreshnessLabel(item.freshnessAgeSec, item.freshnessUpdatedAt)}</Text>
             <Text style={styles.author}>@{item.author}</Text>
+            {item.title ? <Text style={styles.title}>{item.title}</Text> : null}
+            {item.listedPriceCents ? (
+              <Text style={styles.price}>{formatPrice(item.listedPriceCents, item.currency)}</Text>
+            ) : null}
             <Text style={styles.caption}>{item.caption}</Text>
           </View>
         </View>
@@ -134,9 +167,42 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: "600"
   },
+  buyabilityPill: {
+    alignSelf: "flex-start",
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: "#3a3a3a",
+    backgroundColor: "rgba(0,0,0,0.45)",
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    marginBottom: 4
+  },
+  buyabilityOpen: {
+    borderColor: "rgba(126, 205, 123, 0.9)",
+    backgroundColor: "rgba(33, 61, 31, 0.72)"
+  },
+  buyabilityPaused: {
+    borderColor: "rgba(255, 164, 127, 0.95)",
+    backgroundColor: "rgba(75, 42, 28, 0.72)"
+  },
+  buyabilityText: {
+    color: "#f1f1f1",
+    fontSize: 12,
+    fontWeight: "700"
+  },
   author: {
     color: "#ffffff",
     fontSize: 18,
+    fontWeight: "700"
+  },
+  title: {
+    color: "#ffffff",
+    fontSize: 16,
+    fontWeight: "600"
+  },
+  price: {
+    color: "#f7d6a0",
+    fontSize: 14,
     fontWeight: "700"
   },
   caption: {
