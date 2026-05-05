@@ -1,9 +1,10 @@
 import { useState } from "react";
-import { ActivityIndicator, Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
+import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
+import { useRouter } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import type { ChatMessage, Deal } from "@antique/types";
+import type { Deal } from "@antique/types";
 import { useAuthSession } from "../auth/session";
-import { type InboxItem, useInboxTimeline } from "../hooks/useInboxTimeline";
+import { useInboxTimeline } from "../hooks/useInboxTimeline";
 
 const API_BASE_URL = process.env.EXPO_PUBLIC_API_BASE_URL ?? "http://localhost:4000";
 
@@ -26,17 +27,13 @@ function canResolveCorrection(deal: Deal | null, perspective: "buyer" | "seller"
 }
 
 export function InboxScreen() {
+  const router = useRouter();
   const insets = useSafeAreaInsets();
   const { accessToken } = useAuthSession();
   const { items, loading, error, refresh } = useInboxTimeline(accessToken);
   const [actionError, setActionError] = useState<string | null>(null);
   const [pendingDealActions, setPendingDealActions] = useState<Record<string, boolean>>({});
   const [forms, setForms] = useState<Record<string, { shippingAddress: string; reason: string }>>({});
-  const [activeChatItem, setActiveChatItem] = useState<InboxItem | null>(null);
-  const [activeMessages, setActiveMessages] = useState<ChatMessage[]>([]);
-  const [messageDraft, setMessageDraft] = useState("");
-  const [chatBusy, setChatBusy] = useState(false);
-  const [chatError, setChatError] = useState<string | null>(null);
 
   const setPending = (dealId: string, value: boolean) => {
     setPendingDealActions((current) => ({ ...current, [dealId]: value }));
@@ -114,56 +111,6 @@ export function InboxScreen() {
     }
   };
 
-  const openChat = (item: InboxItem) => {
-    setActiveChatItem(item);
-    setActiveMessages(item.messages);
-    setMessageDraft("");
-    setChatError(null);
-  };
-
-  const closeChat = () => {
-    setActiveChatItem(null);
-    setActiveMessages([]);
-    setMessageDraft("");
-    setChatError(null);
-  };
-
-  const sendChatMessage = async () => {
-    if (!activeChatItem || !accessToken) {
-      return;
-    }
-    const text = messageDraft.trim();
-    if (!text) {
-      return;
-    }
-    setChatError(null);
-    setChatBusy(true);
-    try {
-      const response = await fetch(`${API_BASE_URL}/v1/chats/${activeChatItem.chat.id}/messages`, {
-        method: "POST",
-        headers: {
-          authorization: `Bearer ${accessToken}`,
-          "content-type": "application/json"
-        },
-        body: JSON.stringify({ text })
-      });
-      if (!response.ok) {
-        throw new Error(`Message send failed: ${response.status}`);
-      }
-      const created = (await response.json()) as { message?: ChatMessage };
-      if (created.message) {
-        setActiveMessages((current) => [...current, created.message!]);
-      }
-      setMessageDraft("");
-    } catch (sendError) {
-      const nextError = sendError instanceof Error ? sendError.message : "Message send failed";
-      setActionError(nextError);
-      setChatError(nextError);
-    } finally {
-      setChatBusy(false);
-    }
-  };
-
   if (loading) {
     return (
       <View style={styles.centered}>
@@ -189,7 +136,12 @@ export function InboxScreen() {
           const correction = item.deal?.addressCorrection;
 
           return (
-            <Pressable key={item.chat.id} style={styles.card} onPress={() => openChat(item)}>
+            <Pressable
+              key={item.chat.id}
+              style={styles.card}
+              onPress={() => router.push(`/chat/${item.chat.id}`)}
+              testID={`inbox-item-${item.chat.id}`}
+            >
               <View style={styles.row}>
                 <Text style={styles.cardTitle}>Listing {item.chat.listingId}</Text>
                 <Text style={styles.badge}>{item.perspective === "seller" ? "Selling" : "Buying"}</Text>
@@ -209,6 +161,7 @@ export function InboxScreen() {
               <Text style={styles.cardMeta}>
                 {new Date(item.updatedAt).toLocaleString()} · Chat {item.chat.id}
               </Text>
+              <Text style={styles.openChatHint}>Tap to open chat →</Text>
 
               {dealId && canRequestCorrection(item.deal, item.perspective) ? (
                 <View style={styles.actionBlock}>
@@ -268,7 +221,9 @@ export function InboxScreen() {
                   <Pressable
                     style={[styles.secondaryButton, pending ? styles.actionButtonDisabled : null]}
                     disabled={pending}
-                    onPress={() => handleCorrectionResolve(dealId, correction.latestCorrectionId, "reject")}
+                    onPress={() =>
+                      handleCorrectionResolve(dealId, correction.latestCorrectionId, "reject")
+                    }
                   >
                     <Text style={styles.actionButtonText}>Reject</Text>
                   </Pressable>
@@ -278,54 +233,6 @@ export function InboxScreen() {
           );
         })
       )}
-      <Modal
-        visible={Boolean(activeChatItem)}
-        animationType="slide"
-        transparent
-        onRequestClose={closeChat}
-      >
-        <Pressable style={styles.modalOverlay} onPress={closeChat}>
-          <Pressable style={styles.chatSheet} onPress={(event) => event.stopPropagation()} testID="chat-detail-sheet">
-            <View style={styles.chatHeader}>
-              <Text style={styles.heading}>
-                Chat {activeChatItem?.chat.listingId ?? ""}
-              </Text>
-              <Pressable style={styles.closeButton} onPress={closeChat}>
-                <Text style={styles.closeButtonText}>Close</Text>
-              </Pressable>
-            </View>
-            <ScrollView style={styles.chatScroll} contentContainerStyle={styles.chatScrollContent}>
-              {chatError ? <Text style={styles.errorText}>{chatError}</Text> : null}
-              {activeMessages.length === 0 ? (
-                <Text style={styles.metaText}>No messages yet.</Text>
-              ) : (
-                activeMessages.map((message) => (
-                  <View key={message.id} style={styles.messageBubble}>
-                    <Text style={styles.messagePreview}>{message.text}</Text>
-                    <Text style={styles.cardMeta}>{new Date(message.createdAt).toLocaleString()}</Text>
-                  </View>
-                ))
-              )}
-            </ScrollView>
-            <View style={styles.chatComposer}>
-              <TextInput
-                style={styles.input}
-                placeholder="Type a message"
-                placeholderTextColor="#777"
-                value={messageDraft}
-                onChangeText={setMessageDraft}
-              />
-              <Pressable
-                style={[styles.actionButton, chatBusy ? styles.actionButtonDisabled : null]}
-                onPress={sendChatMessage}
-                disabled={chatBusy}
-              >
-                <Text style={styles.actionButtonText}>{chatBusy ? "Sending..." : "Send"}</Text>
-              </Pressable>
-            </View>
-          </Pressable>
-        </Pressable>
-      </Modal>
     </ScrollView>
   );
 }
@@ -385,6 +292,12 @@ const styles = StyleSheet.create({
     color: "#969696",
     fontSize: 12
   },
+  openChatHint: {
+    color: "#7aab7a",
+    fontSize: 12,
+    fontWeight: "600",
+    marginTop: 2
+  },
   badge: {
     color: "#f0f0f0",
     fontSize: 12,
@@ -434,52 +347,5 @@ const styles = StyleSheet.create({
   },
   actionButtonDisabled: {
     opacity: 0.6
-  },
-  modalOverlay: {
-    flex: 1,
-    justifyContent: "flex-end",
-    backgroundColor: "rgba(0,0,0,0.5)"
-  },
-  chatSheet: {
-    backgroundColor: "#141414",
-    borderTopLeftRadius: 20,
-    borderTopRightRadius: 20,
-    maxHeight: "88%",
-    padding: 14,
-    gap: 10
-  },
-  chatHeader: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    gap: 10
-  },
-  closeButton: {
-    borderRadius: 999,
-    borderWidth: 1,
-    borderColor: "#3a3a3a",
-    paddingHorizontal: 12,
-    paddingVertical: 6
-  },
-  closeButtonText: {
-    color: "#f2f2f2",
-    fontWeight: "700",
-    fontSize: 12
-  },
-  chatScroll: {
-    maxHeight: 320
-  },
-  chatScrollContent: {
-    gap: 8
-  },
-  messageBubble: {
-    backgroundColor: "#212121",
-    borderRadius: 10,
-    paddingHorizontal: 10,
-    paddingVertical: 8,
-    gap: 6
-  },
-  chatComposer: {
-    gap: 8
   }
 });

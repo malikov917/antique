@@ -14,6 +14,7 @@ export interface NotificationsState {
   announcements: AnnouncementItem[];
   loading: boolean;
   error: string | null;
+  refresh: () => void;
 }
 
 export function useNotifications(accessToken?: string): NotificationsState {
@@ -21,6 +22,7 @@ export function useNotifications(accessToken?: string): NotificationsState {
   const [announcements, setAnnouncements] = useState<AnnouncementItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [refreshTick, setRefreshTick] = useState(0);
   const [hasLoadedOnce, setHasLoadedOnce] = useState(false);
 
   useEffect(() => {
@@ -88,14 +90,15 @@ export function useNotifications(accessToken?: string): NotificationsState {
       clearInterval(intervalId);
       abortController.abort();
     };
-  }, [accessToken, hasLoadedOnce]);
+  }, [accessToken, refreshTick, hasLoadedOnce]);
 
   return useMemo(
     () => ({
       notifications,
       announcements,
       loading,
-      error
+      error,
+      refresh: () => setRefreshTick((value) => value + 1)
     }),
     [announcements, error, loading, notifications]
   );
