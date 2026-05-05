@@ -11,6 +11,7 @@ function buildUser(allowedRoles: AuthUser["allowedRoles"]): AuthUser {
     id: "user-1",
     phone: "+15550001111",
     displayName: "Tester",
+    paymentInfo: null,
     tenantId: "tenant-1",
     allowedRoles,
     activeRole: allowedRoles[0] ?? "buyer",

@@ -51,6 +51,7 @@ export interface AuthUser {
   id: string;
   phone: string;
   displayName: string | null;
+  paymentInfo: string | null;
   tenantId: string;
   allowedRoles: AuthRole[];
   activeRole: AuthRole;
@@ -223,6 +224,7 @@ export interface MeResponse {
 
 export interface UpdateMeRequest {
   displayName?: string | null;
+  paymentInfo?: string | null;
 }
 
 export interface RoleSwitchRequest {

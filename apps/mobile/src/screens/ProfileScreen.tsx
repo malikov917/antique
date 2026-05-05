@@ -54,6 +54,7 @@ export function ProfileScreen() {
   const { accessToken, user, setUser, signOut, isAuthenticated } = useAuthSession();
   const [application, setApplication] = useState<SellerApplication | null>(null);
   const [displayName, setDisplayName] = useState("");
+  const [paymentInfo, setPaymentInfo] = useState("");
   const [roleDraft, setRoleDraft] = useState<"buyer" | "seller" | "admin">("buyer");
   const [fullName, setFullName] = useState("");
   const [shopName, setShopName] = useState("");
@@ -77,6 +78,7 @@ export function ProfileScreen() {
       const meBody = await readJson<MeResponse>(meResponse);
       setUser(meBody.user);
       setDisplayName(meBody.user.displayName ?? "");
+      setPaymentInfo(meBody.user.paymentInfo ?? "");
       if (meBody.user.allowedRoles.includes(meBody.user.activeRole)) {
         setRoleDraft(meBody.user.activeRole);
       }
@@ -142,6 +144,28 @@ export function ProfileScreen() {
       setMessage("Display name updated.");
     } catch (error) {
       setMessage(safeErrorMessage(error, "Failed to update display name."));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function savePaymentInfo() {
+    setBusy(true);
+    try {
+      const response = await fetch(`${API_BASE_URL}/v1/me`, {
+        method: "PATCH",
+        headers: {
+          ...authHeaders,
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({ paymentInfo: paymentInfo.trim() || null })
+      });
+      const body = await readJson<MeResponse>(response);
+      setUser(body.user);
+      setPaymentInfo(body.user.paymentInfo ?? "");
+      setMessage("Payment info updated.");
+    } catch (error) {
+      setMessage(safeErrorMessage(error, "Failed to update payment info."));
     } finally {
       setBusy(false);
     }
@@ -238,6 +262,27 @@ export function ProfileScreen() {
           <Text style={styles.secondaryButtonText}>Save display name</Text>
         </Pressable>
       </View>
+
+      {user?.allowedRoles.includes("seller") ? (
+        <View style={styles.section}>
+          <Text style={styles.label}>Payment info template</Text>
+          <Text style={styles.help}>
+            This text is inserted into deal chat with one tap so buyers know how to pay you.
+          </Text>
+          <TextInput
+            value={paymentInfo}
+            onChangeText={setPaymentInfo}
+            style={[styles.input, styles.multiline]}
+            placeholder="e.g. PayPal: seller@example.com / Venmo: @seller"
+            placeholderTextColor="#7d7d7d"
+            multiline
+            numberOfLines={3}
+          />
+          <Pressable onPress={() => void savePaymentInfo()} style={styles.secondaryButton} disabled={busy}>
+            <Text style={styles.secondaryButtonText}>Save payment info</Text>
+          </Pressable>
+        </View>
+      ) : null}
 
       {showRoleGovernance ? (
         <View style={styles.section}>

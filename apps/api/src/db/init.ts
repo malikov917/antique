@@ -583,6 +583,9 @@ export function initializeDatabase(sqlite: Database): void {
   if (!userColumns.some((column) => column.name === "suspended_at")) {
     sqlite.exec("ALTER TABLE users ADD COLUMN suspended_at INTEGER");
   }
+  if (!userColumns.some((column) => column.name === "payment_info")) {
+    sqlite.exec("ALTER TABLE users ADD COLUMN payment_info TEXT");
+  }
 
   const sellerApplicationColumns = sqlite
     .prepare("PRAGMA table_info(seller_applications)")

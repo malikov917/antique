@@ -25,7 +25,7 @@ interface ChatDetailScreenProps {
 export function ChatDetailScreen({ chatId }: ChatDetailScreenProps) {
   const router = useRouter();
   const insets = useSafeAreaInsets();
-  const { accessToken } = useAuthSession();
+  const { accessToken, user } = useAuthSession();
   const { chat, deal, messages, perspective, loading, error, sendMessage, sending } = useChatDetail(
     chatId,
     accessToken
@@ -103,6 +103,15 @@ export function ChatDetailScreen({ chatId }: ChatDetailScreenProps) {
       </ScrollView>
 
       <View style={styles.composer}>
+        {perspective === "seller" && user?.paymentInfo ? (
+          <Pressable
+            style={[styles.templateButton, sending ? styles.sendButtonDisabled : null]}
+            onPress={() => setMessageDraft(user.paymentInfo!)}
+            disabled={sending}
+          >
+            <Text style={styles.templateButtonText}>💳 Insert payment info</Text>
+          </Pressable>
+        ) : null}
         <TextInput
           style={styles.input}
           placeholder="Type a message"
@@ -262,6 +271,18 @@ const styles = StyleSheet.create({
   sendButtonText: {
     color: "#f5f5f5",
     fontWeight: "700",
+    fontSize: 13
+  },
+  templateButton: {
+    backgroundColor: "#2a2a2a",
+    borderRadius: 8,
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    alignSelf: "flex-start"
+  },
+  templateButtonText: {
+    color: "#f5f5f5",
+    fontWeight: "600",
     fontSize: 13
   },
   metaText: {
