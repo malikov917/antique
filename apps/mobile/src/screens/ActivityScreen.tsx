@@ -1,10 +1,12 @@
-import { ActivityIndicator, FlatList, StyleSheet, Text, View } from "react-native";
-import { Pressable } from "react-native";
+import { ActivityIndicator, FlatList, Pressable, StyleSheet, Text, View } from "react-native";
 import { useRouter } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import type { NotificationItem } from "@antique/types";
+import { useState } from "react";
 import { useAuthSession } from "../auth/session";
 import { useNotifications } from "../hooks/useNotifications";
+
+type ActivityFilter = "all" | "buyer" | "seller";
 
 type ActivityEntry =
   | {
@@ -55,13 +57,54 @@ function toLabel(type: NotificationItem["type"]): string {
   }
 }
 
+function matchesFilter(entry: ActivityEntry, filter: ActivityFilter): boolean {
+  if (filter === "all") {
+    return true;
+  }
+  const type = entry.eventType;
+  if (filter === "buyer") {
+    return (
+      type === "offer_accepted" ||
+      type === "offer_declined" ||
+      type === "deal_address_correction_requested" ||
+      type === "deal_address_correction_approved" ||
+      type === "deal_address_correction_rejected"
+    );
+  }
+  // seller
+  return type === "offer_submitted" || type === "session_opened" || type === "session_closed";
+}
+
+function groupLabel(dateString: string): string {
+  const date = new Date(dateString);
+  const now = new Date();
+  const isToday =
+    date.getDate() === now.getDate() &&
+    date.getMonth() === now.getMonth() &&
+    date.getFullYear() === now.getFullYear();
+  if (isToday) {
+    return "Today";
+  }
+  const yesterday = new Date(now);
+  yesterday.setDate(yesterday.getDate() - 1);
+  const isYesterday =
+    date.getDate() === yesterday.getDate() &&
+    date.getMonth() === yesterday.getMonth() &&
+    date.getFullYear() === yesterday.getFullYear();
+  if (isYesterday) {
+    return "Yesterday";
+  }
+  return date.toLocaleDateString(undefined, { weekday: "long", month: "short", day: "numeric" });
+}
+
 export function ActivityScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const { accessToken } = useAuthSession();
-  const { notifications, announcements, loading, error } = useNotifications(accessToken);
+  const { notifications, announcements, loading, error, refresh } = useNotifications(accessToken);
+  const [filter, setFilter] = useState<ActivityFilter>("all");
 
-  const entries: ActivityEntry[] = [
+  const allEntries: ActivityEntry[] = [
     ...notifications.map((item) => ({
       id: item.id,
       kind: "notification" as const,
@@ -80,6 +123,51 @@ export function ActivityScreen() {
     }))
   ].sort((left, right) => Date.parse(right.createdAt) - Date.parse(left.createdAt));
 
+  const filteredEntries = allEntries.filter((entry) => matchesFilter(entry, filter));
+
+  const sections: { title: string; data: ActivityEntry[] }[] = [];
+  for (const entry of filteredEntries) {
+    const label = groupLabel(entry.createdAt);
+    const lastSection = sections[sections.length - 1];
+    if (lastSection && lastSection.title === label) {
+      lastSection.data.push(entry);
+    } else {
+      sections.push({ title: label, data: [entry] });
+    }
+  }
+
+  const flatData: (ActivityEntry | { id: string; kind: "section"; title: string })[] = [];
+  for (const section of sections) {
+    flatData.push({ id: `section-${section.title}`, kind: "section" as const, title: section.title });
+    for (const entry of section.data) {
+      flatData.push(entry);
+    }
+  }
+
+  const renderItem = ({
+    item
+  }: {
+    item: ActivityEntry | { id: string; kind: "section"; title: string };
+  }) => {
+    if (item.kind === "section") {
+      return (
+        <View style={styles.sectionHeader}>
+          <Text style={styles.sectionTitle}>{item.title}</Text>
+        </View>
+      );
+    }
+    return (
+      <View style={styles.card}>
+        <View style={styles.row}>
+          <Text style={styles.cardTitle}>{item.title}</Text>
+          <Text style={styles.badge}>{toLabel(item.eventType)}</Text>
+        </View>
+        <Text style={styles.cardBody}>{item.body}</Text>
+        <Text style={styles.cardMeta}>{new Date(item.createdAt).toLocaleString()}</Text>
+      </View>
+    );
+  };
+
   if (loading) {
     return (
       <View style={styles.centered}>
@@ -94,8 +182,10 @@ export function ActivityScreen() {
       style={styles.root}
       contentContainerStyle={[styles.content, { paddingTop: insets.top + 18 }]}
       testID="activity-screen"
-      data={entries}
+      data={flatData}
       keyExtractor={(item) => `${item.kind}-${item.id}`}
+      refreshing={loading}
+      onRefresh={refresh}
       ListHeaderComponent={
         <View style={styles.headerBlock}>
           <View style={styles.headerRow}>
@@ -104,20 +194,30 @@ export function ActivityScreen() {
               <Text style={styles.backButtonText}>Back to Feed</Text>
             </Pressable>
           </View>
+
+          <View style={styles.filterRow}>
+            {(["all", "buyer", "seller"] as ActivityFilter[]).map((f) => (
+              <Pressable
+                key={f}
+                style={[styles.filterChip, filter === f ? styles.filterChipActive : null]}
+                onPress={() => setFilter(f)}
+              >
+                <Text style={[styles.filterChipText, filter === f ? styles.filterChipTextActive : null]}>
+                  {f === "all" ? "All" : f === "buyer" ? "Buying" : "Selling"}
+                </Text>
+              </Pressable>
+            ))}
+          </View>
+
           {error ? <Text style={styles.errorText}>{error}</Text> : null}
-          {entries.length === 0 ? <Text style={styles.metaText}>No activity yet.</Text> : null}
+          {flatData.length === 0 ? (
+            <Text style={styles.metaText}>
+              {filter === "all" ? "No activity yet." : `No ${filter === "buyer" ? "buying" : "selling"} activity.`}
+            </Text>
+          ) : null}
         </View>
       }
-      renderItem={({ item: entry }) => (
-        <View style={styles.card}>
-          <View style={styles.row}>
-            <Text style={styles.cardTitle}>{entry.title}</Text>
-            <Text style={styles.badge}>{toLabel(entry.eventType)}</Text>
-          </View>
-          <Text style={styles.cardBody}>{entry.body}</Text>
-          <Text style={styles.cardMeta}>{new Date(entry.createdAt).toLocaleString()}</Text>
-        </View>
-      )}
+      renderItem={renderItem}
     />
   );
 }
@@ -134,7 +234,8 @@ const styles = StyleSheet.create({
     gap: 10
   },
   headerBlock: {
-    gap: 10
+    gap: 10,
+    marginBottom: 6
   },
   centered: {
     flex: 1,
@@ -167,6 +268,42 @@ const styles = StyleSheet.create({
     fontWeight: "700",
     fontSize: 12
   },
+  filterRow: {
+    flexDirection: "row",
+    gap: 8,
+    marginTop: 4
+  },
+  filterChip: {
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: "#3a3a3a",
+    backgroundColor: "#1a1a1a",
+    paddingHorizontal: 14,
+    paddingVertical: 6
+  },
+  filterChipActive: {
+    backgroundColor: "#2f5d2f",
+    borderColor: "#2f5d2f"
+  },
+  filterChipText: {
+    color: "#b8b8b8",
+    fontWeight: "600",
+    fontSize: 13
+  },
+  filterChipTextActive: {
+    color: "#f5f5f5"
+  },
+  sectionHeader: {
+    marginTop: 8,
+    marginBottom: 4
+  },
+  sectionTitle: {
+    color: "#969696",
+    fontSize: 13,
+    fontWeight: "700",
+    textTransform: "uppercase",
+    letterSpacing: 0.5
+  },
   row: {
     flexDirection: "row",
     justifyContent: "space-between",
@@ -179,7 +316,8 @@ const styles = StyleSheet.create({
     padding: 12,
     gap: 6,
     borderWidth: 1,
-    borderColor: "#242424"
+    borderColor: "#242424",
+    marginBottom: 8
   },
   cardTitle: {
     color: "#f2f2f2",
