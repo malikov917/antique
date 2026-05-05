@@ -38,6 +38,11 @@ Core principles:
 | Bottom tab icons in mobile navigation | Planned | 2026-03-14 | TBD |
 | Seller one-tap payment info message in chat | Planned | 2026-03-14 | TBD |
 | Persistent inventory outside market day + `in_stock`/`out_of_stock` buyer hints | Planned | 2026-03-14 | TBD |
+| Auth screen explicit registration affordance + placeholder cleanup | Planned | 2026-05-05 | ANT-85 |
+| Feed reels listing info overlay + buyer purchase CTA + tap-to-detail | Planned | 2026-05-05 | ANT-86 |
+| Inbox UI overhaul: clean cards, listing titles, visual hierarchy | Planned | 2026-05-05 | ANT-87 |
+| Profile screen enrichment: avatar, stats, settings | Planned | 2026-05-05 | ANT-88 |
+| Activity screen role-aware tab filters + relative timestamps | Planned | 2026-05-05 | ANT-89 |
 
 Status keys:
 - `Done`: implemented and verified
@@ -334,7 +339,23 @@ Add validation constants:
 1. Support listing creation outside active market day.
 2. Keep products visible even when unavailable for purchase.
 3. Add explicit `In stock` / `Out of stock` availability in API + mobile UI.
-6. Existing platform hardening that remains relevant:
+6. Auth UX polish:
+1. Explicit register vs sign-in affordance on auth screen.
+2. Remove hardcoded test placeholder from phone input.
+7. Feed conversion surface:
+1. Listing title, price, and description overlay on reels.
+2. Primary CTA for basket/offer directly on feed.
+3. Tap-to-detail navigation to dedicated listing screen.
+8. Inbox visual quality:
+1. Replace raw UUIDs with listing titles.
+2. Remove debug-field dump; use clean cards with avatar, preview, timestamp, unread state.
+9. Activity role-awareness:
+1. Tab filters should match user's allowed roles.
+2. Relative timestamp formatting instead of raw dates.
+10. Profile depth:
+1. Avatar, buyer/seller stats, settings section.
+2. Role-appropriate copy and placeholders.
+11. Existing platform hardening that remains relevant:
 1. reliability controls (idempotent offer acceptance, optimistic locking),
 2. observability dashboards and audit completeness,
 3. moderation rules for video/listing quality.
@@ -376,6 +397,13 @@ Add validation constants:
 3. One-tap seller payment-info message in chat.
 4. Persistent catalog outside market day.
 5. `In stock` / `Out of stock` status across API and mobile.
+
+### P6 (screen-audit UX polish, May 5, 2026)
+1. Auth screen explicit register affordance + placeholder cleanup (ANT-85).
+2. Feed reels listing info overlay + purchase CTA + tap-to-detail (ANT-86).
+3. Inbox UI overhaul: clean cards, titles, visual hierarchy (ANT-87).
+4. Profile screen enrichment: avatar, stats, settings (ANT-88).
+5. Activity screen role-aware filters + relative timestamps (ANT-89).
 
 ## 13) Testing and Acceptance Criteria
 
@@ -419,6 +447,35 @@ These are implementation quality gaps observed during role-based iOS walkthrough
 1. `Too many requests` appears during normal manual testing cadence and should be recalibrated.
 6. Bottom tab navigation affordance gap:
 1. Missing tab icons reduce discoverability and fail expected mobile navigation patterns.
+
+### 13.2 Current UX/E2E quality gaps (observed on May 5, 2026)
+Additional gaps identified during iOS role screen audit with fully seeded marketplace data:
+
+1. Auth screen lacks explicit registration affordance:
+1. No "Register" button or separate registration screen; login and registration are conflated into a single OTP flow with no visual distinction.
+2. Phone input placeholder shows hardcoded test number `+4915123400011`, which leaks seeded data and looks unprofessional.
+2. Feed lacks purchase conversion surface:
+1. Reels overlay shows no listing title, price, or description on the video.
+2. No "Add to Basket" or "Make Offer" CTA is visible on the feed; buyer cannot initiate purchase without leaving the reels experience.
+3. No tap-to-detail affordance: tapping a reel does not navigate to a dedicated listing detail screen.
+3. Inbox card design is overloaded with raw internal data:
+1. Listing title is hidden; raw UUID (`Listing 948433d2-...`) is displayed instead.
+2. Cards expose internal fields (deal status, active address, correction count, chat ID) in an unstructured wall of text.
+3. Missing visual hierarchy: unread indicator, avatar/seller identity, clean message preview, and timestamp formatting.
+4. Activity tab filters are not role-aware:
+1. Buyer activity screen shows a "Selling" filter tab, which is irrelevant and confusing.
+2. Seller activity screen shows a "Buying" filter tab, which is irrelevant and confusing.
+3. Filter visibility should be conditional on the user's allowed/active roles.
+5. Profile screen is under-featured:
+1. Only phone, user ID, active role, and a single display-name field are shown.
+2. No avatar/profile photo upload or placeholder.
+3. No account settings (notifications, privacy, language, logout confirmation).
+4. No buyer stats (offers made, deals won) or seller stats (listings sold, sessions held).
+5. Display name placeholder text is "Antique seller" even for buyer-only accounts.
+6. Additional polish gaps:
+1. Activity timestamps use raw locale date strings (`5.5.2026, 18:28:38`) instead of relative human-readable time.
+2. Seller feed shows an "Upload" button but no seller dashboard or inventory management entry point.
+3. No search or discovery affordance anywhere in the tab navigation.
 
 ### 13.2 Beta UI-first priorities (replanned on March 14, 2026)
 For current beta, prioritize visual quality and flow clarity before deeper security/infra hardening:
