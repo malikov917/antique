@@ -139,7 +139,7 @@ export function InboxScreen() {
             <Pressable
               key={item.chat.id}
               style={styles.card}
-              onPress={() => router.push(`/chat/${item.chat.id}`)}
+              onPress={() => router.push(`/chat/${item.chat.id}` as any)}
               testID={`inbox-item-${item.chat.id}`}
             >
               <View style={styles.row}>
