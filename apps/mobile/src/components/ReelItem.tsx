@@ -2,6 +2,7 @@ import { useEffect, useMemo } from "react";
 import { Dimensions, Pressable, StyleSheet, Text, View } from "react-native";
 import { VideoView, type VideoPlayer } from "expo-video";
 import NativeVideoModule from "expo-video/build/NativeVideoModule";
+import type { AuthRole } from "@antique/types";
 import type { ReelPlayableItem } from "../hooks/useReelsFeed";
 import { useReelPlaybackControls } from "../hooks/useReelPlaybackControls";
 import { ReelProgressBar } from "./ReelProgressBar";
@@ -40,14 +41,24 @@ function BuyabilityPill({ item }: { item: ReelPlayableItem }) {
 export function ReelItem({
   item,
   active,
-  itemIndex
+  itemIndex,
+  userRole,
+  onMakeOffer
 }: {
   item: ReelPlayableItem;
   active: boolean;
   itemIndex: number;
+  userRole?: AuthRole | null;
+  onMakeOffer?: (item: ReelPlayableItem) => void;
 }) {
   const player = useCompatVideoPlayer(item.streamUrl);
   const playback = useReelPlaybackControls({ active, player });
+
+  const canMakeOffer =
+    userRole === "buyer" &&
+    item.listingStatus === "live" &&
+    item.availability === "in_stock" &&
+    typeof item.listedPriceCents === "number";
 
   return (
     <View style={styles.wrapper} testID={`reel-item-${itemIndex}`}>
@@ -73,6 +84,15 @@ export function ReelItem({
               testID={`reel-progress-${itemIndex}`}
             />
             <BuyabilityPill item={item} />
+            {canMakeOffer ? (
+              <Pressable
+                style={styles.offerButton}
+                onPress={() => onMakeOffer?.(item)}
+                testID={`reel-offer-button-${itemIndex}`}
+              >
+                <Text style={styles.offerButtonText}>Make offer</Text>
+              </Pressable>
+            ) : null}
             <Text style={styles.freshness}>{formatFreshnessLabel(item.freshnessAgeSec, item.freshnessUpdatedAt)}</Text>
             <Text style={styles.author}>@{item.author}</Text>
             {item.title ? <Text style={styles.title}>{item.title}</Text> : null}
@@ -209,5 +229,18 @@ const styles = StyleSheet.create({
   caption: {
     color: "#eeeeee",
     fontSize: 15
+  },
+  offerButton: {
+    alignSelf: "flex-start",
+    backgroundColor: "#f8f8f8",
+    borderRadius: 999,
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    marginBottom: 4
+  },
+  offerButtonText: {
+    color: "#111111",
+    fontWeight: "700",
+    fontSize: 13
   }
 });

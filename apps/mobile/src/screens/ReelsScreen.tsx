@@ -14,6 +14,8 @@ import {
 import { FlashList, type FlashListRef } from "@shopify/flash-list";
 import { ReelItem } from "../components/ReelItem";
 import { UploadFlow } from "../components/UploadFlow";
+import { OfferFlow } from "../components/OfferFlow";
+import type { ReelPlayableItem } from "../hooks/useReelsFeed";
 import { type FeedEntry, buildFeedEntries, buildStoryRings, useReelsFeed } from "../hooks/useReelsFeed";
 import { useVideoPrefetch } from "../hooks/useVideoPrefetch";
 import { useAuthSession } from "../auth/session";
@@ -25,6 +27,7 @@ export function ReelsScreen() {
   const [activeIndex, setActiveIndex] = useState(0);
   const [seenAuthors, setSeenAuthors] = useState<Set<string>>(new Set());
   const [uploadOpen, setUploadOpen] = useState(false);
+  const [offerItem, setOfferItem] = useState<ReelPlayableItem | null>(null);
   const { items, announcements, loading, error, refresh } = useReelsFeed(accessToken);
   const feedEntries = useMemo(() => buildFeedEntries(items, announcements), [announcements, items]);
   const listRef = useRef<FlashListRef<FeedEntry>>(null);
@@ -57,9 +60,17 @@ export function ReelsScreen() {
 
   const renderItem = useCallback(
     ({ item, index }: { item: FeedEntry; index: number }) => {
-      return item.kind === "reel" ? <ReelItem item={item.reel} active={index === activeIndex} itemIndex={index} /> : null;
+      return item.kind === "reel" ? (
+        <ReelItem
+          item={item.reel}
+          active={index === activeIndex}
+          itemIndex={index}
+          userRole={user?.activeRole}
+          onMakeOffer={setOfferItem}
+        />
+      ) : null;
     },
-    [activeIndex, scrollToTop]
+    [activeIndex, scrollToTop, user?.activeRole]
   );
 
   useEffect(() => {
@@ -154,6 +165,27 @@ export function ReelsScreen() {
                 refresh();
               }}
             />
+          </View>
+        </Pressable>
+      </Modal>
+      <Modal
+        animationType="slide"
+        transparent
+        visible={Boolean(offerItem)}
+        onRequestClose={() => setOfferItem(null)}
+      >
+        <Pressable style={styles.modalOverlay} onPress={() => setOfferItem(null)}>
+          <View testID="offer-sheet" style={styles.sheet}>
+            {offerItem ? (
+              <OfferFlow
+                item={offerItem}
+                accessToken={accessToken}
+                onDone={() => {
+                  setOfferItem(null);
+                  refresh();
+                }}
+              />
+            ) : null}
           </View>
         </Pressable>
       </Modal>
