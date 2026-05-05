@@ -1,0 +1,32 @@
+appId: host.exp.exponent
+---
+- launchApp
+- openLink: ${EXPO_DEV_URL}
+- runFlow:
+    when:
+      visible: "Continue"
+    commands:
+      - tapOn:
+          point: "92%,16%"
+- extendedWaitUntil:
+    visible:
+      id: "reels-screen"
+    timeout: 20000
+- tapOn:
+    id: "reel-offer-button-0"
+- assertVisible:
+    id: "offer-sheet"
+- tapOn:
+    id: "offer-amount-input"
+- inputText: "30.00"
+- tapOn:
+    id: "offer-address-input"
+- inputText: "123 Buyer Lane, Berlin"
+- tapOn:
+    id: "offer-submit-button"
+- extendedWaitUntil:
+    visible:
+      id: "offer-flow-success"
+    timeout: 15000
+- tapOn:
+    text: "Done"

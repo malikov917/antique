@@ -404,11 +404,41 @@ async function main() {
     hasCloseAnnouncement
   };
 
+  // Open a new session and create a feed-visible listing for buyer-offer-from-feed E2E
+  await requestJson({
+    apiBaseUrl,
+    method: "POST",
+    path: "/v1/seller/sessions/open",
+    token: seller.accessToken,
+    expectedStatus: 200
+  });
+
+  const feedListing = await requestJson({
+    apiBaseUrl,
+    method: "POST",
+    path: "/v1/listings",
+    token: seller.accessToken,
+    payload: {
+      title: "ANT-81 Buyer Feed Reel",
+      description: "Workflow listing for buyer feed offer coverage",
+      listedPriceCents: 3000,
+      currency: "USD",
+      playbackId: "DS00Spx1CV902zP2Yw6xh38GQ01CV5WfBvXMUdr74j4"
+    },
+    expectedStatus: 200
+  });
+
+  scenarios.wf4BuyerOfferFromFeed = {
+    ok: true,
+    feedListingId: feedListing.listing.id
+  };
+
   const result = {
     generatedAt: new Date().toISOString(),
     apiBaseUrl,
     platform,
     appAccessToken: seller.accessToken,
+    buyerAccessToken: buyer.accessToken,
     users: {
       sellerUserId: seller.userId,
       adminUserId: admin.userId,
