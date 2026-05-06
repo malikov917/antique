@@ -1,6 +1,6 @@
 # Antique Product Specification (v2)
 
-Last updated: March 14, 2026
+Last updated: May 6, 2026
 Owner: Product + Engineering (Linear team: Antique)
 Source of truth for delivery: Linear issues mapped to this spec
 
@@ -33,11 +33,20 @@ Core principles:
 | Story rings + announcements + notifications | Done | 2026-03-12 | ANT-39, ANT-40, ANT-54, ANT-58 |
 | Abuse prevention + moderation + observability | Done | 2026-03-11 | ANT-41, ANT-42 |
 | Fulfillment edge-case workflows | Done | 2026-03-12 | ANT-44, ANT-60, ANT-61, ANT-62 |
-| Admin-only role governance (allowlist + hide non-admin role controls) | Planned | 2026-03-14 | TBD |
-| OTP throttling calibration for normal beta login retries | Planned | 2026-03-14 | TBD |
-| Bottom tab icons in mobile navigation | Planned | 2026-03-14 | TBD |
-| Seller one-tap payment info message in chat | Planned | 2026-03-14 | TBD |
-| Persistent inventory outside market day + `in_stock`/`out_of_stock` buyer hints | Planned | 2026-03-14 | TBD |
+| Admin-only role governance (allowlist + hide non-admin role controls) | Done | 2026-05-05 | ANT-69, ANT-80 |
+| OTP throttling calibration for normal beta login retries | Done | 2026-05-05 | ANT-71 |
+| Bottom tab icons in mobile navigation | Done | 2026-05-05 | ANT-70 |
+| Seller one-tap payment info message in chat | In Review | 2026-05-05 | ANT-72 |
+| Persistent inventory outside market day + `in_stock`/`out_of_stock` buyer hints | Done | 2026-05-05 | ANT-74 |
+| Feed source alignment with marketplace listing/deal domain state | Done | 2026-05-05 | ANT-73 |
+| Buyer basket/offer submission UI | Done | 2026-05-05 | ANT-81 |
+| Inbox/Activity workflow depth (threaded chat detail, role-aware filtering) | Done | 2026-05-05 | ANT-75 |
+| E2E workflow coverage (Maestro iOS screen audit) | Done | 2026-05-05 | ANT-67 |
+| Mobile UX audit + screenshot artifacts | Done | 2026-05-05 | ANT-57 |
+| Domain module extraction (deal/chat, session/listing) | Done | 2026-05-05 | ANT-65, ANT-68 |
+| ReelsScreen compilation regression fix | Done | 2026-05-05 | ANT-78 |
+| Deals test ordering stability | Done | 2026-05-05 | ANT-79 |
+| Typecheck regression fix | Done | 2026-05-05 | ANT-82 |
 | Auth screen explicit registration affordance + placeholder cleanup | Planned | 2026-05-05 | ANT-85 |
 | Feed reels listing info overlay + buyer purchase CTA + tap-to-detail | Planned | 2026-05-05 | ANT-86 |
 | Inbox UI overhaul: clean cards, listing titles, visual hierarchy | Planned | 2026-05-05 | ANT-87 |
@@ -63,21 +72,18 @@ Implemented today:
 9. Trust, safety, and observability: block/report actions, seller suspension, listing moderation flags, and admin observability summary endpoint.
 10. Seller operations: sales ledger API + CSV export with tenant-aware authorization and export auditing.
 11. SQLite persistence for marketplace entities (sessions, listings, basket, offers, deals, chats, notifications, announcements, sales, audit events) with tenant-scoped guards.
+12. Reels feed source aligned with marketplace listing/deal domain state (no more in-memory demo videos; feed reflects transactional state).
+13. Buyer basket and offer submission UI on mobile feed with per-listing CTA.
+14. Inbox/Activity workflow depth: threaded chat detail screen, role-aware filtering, and clean card layout.
+15. E2E workflow coverage with Maestro iOS screen audit and deterministic seeded role flows.
 
 Remaining gaps:
-1. Seeded beta credentials role mapping regression: seeded `Admin` phone is currently treated as buyer-only and cannot access admin capabilities.
-2. OTP flow rate-limit behavior needs tuning: users can hit `Too many requests` unexpectedly during normal login retries.
-3. Bottom tab navigation icons are missing on mobile; tabs currently rely on text-only affordances.
-4. Role management UX/policy realignment:
-1. No public role-pick register flow.
-2. Non-admin users should not see role/status update controls.
-3. Admin role assignment should be owner-managed via DB allowlist.
-5. Seller chat productivity:
-1. Seller should have a saved payment/help template that can be inserted into chat with one tap.
-6. Listing lifecycle/persistence:
-1. Seller should be able to upload and maintain products outside an active market day.
-2. Buyers should always be able to view seller products, while buyability is controlled by explicit availability state.
-3. UI should display `In stock` / `Out of stock` status so buyers know whether purchase is still possible.
+1. Seller chat productivity: one-tap payment/help template insertion in deal chat (ANT-72 in review).
+2. Auth screen UX polish: explicit register affordance and placeholder cleanup (ANT-85 planned).
+3. Feed conversion surface: listing info overlay, primary purchase CTA, and tap-to-detail navigation (ANT-86 planned).
+4. Inbox visual overhaul: clean cards with listing titles, avatars, timestamps, and unread state (ANT-87 planned).
+5. Profile screen enrichment: avatar, buyer/seller stats, and settings (ANT-88 planned).
+6. Activity screen relative timestamps and final visual polish (ANT-89 planned).
 
 ### 3.1 Manual Test Requirement Matrix (March 14, 2026)
 
@@ -87,10 +93,10 @@ Remaining gaps:
 | Seller can close sales and buyers see post in feed | Market close triggers system announcement; feed/activity consume announcements | Implemented (validate UX polish) |
 | Seller can upload video and set price/description; update later if needed | Upload + listing create/update exists; `description` optional, `listedPriceCents` required on create | Partially implemented |
 | Buyer can apply/buy and both sides get chat to finalize | Buyer offer + seller accept flow creates per-deal chat for buyer/seller | Implemented |
-| Seller has one-click "how to pay / other info" message in chat | Generic chat exists; no one-tap payment-template insertion action | New requirement (Planned) |
-| Listings become unavailable for buy when seller is out of active market | Day close blocks new basket/offers and keeps listing visible | Implemented for market-day listings |
-| Seller can upload products outside active market day; posts persist and can be bought later; seller can update | Current create flow is tied to active market session; updates exist after creation | New requirement (Planned) |
-| Buyers see `In stock` / `Out of stock` hint on seller products | No explicit stock badge/state in contracts/UI | New requirement (Planned) |
+| Seller has one-click "how to pay / other info" message in chat | Backend template endpoint and mobile composer action implemented; in review (ANT-72) | In Review |
+| Listings become unavailable for buy when seller is out of active market | Day close blocks new basket/offers and keeps listing visible | Implemented |
+| Seller can upload products outside active market day; posts persist and can be bought later; seller can update | Persistent inventory with `in_stock`/`out_of_stock` states supported outside market sessions | Implemented |
+| Buyers see `In stock` / `Out of stock` hint on seller products | `availabilityStatus` field present in listing contracts and feed | Implemented |
 
 ## 4) Personas and Roles
 
@@ -268,11 +274,11 @@ Profile:
 2. Seller sees buyer name/address, product, accepted price, statuses.
 3. Seller exports CSV for fulfillment operations.
 
-### WF-10: Persistent inventory and stock visibility (planned)
-1. Seller can upload/save products even when no market session is open.
-2. Product video stays visible on seller page regardless of buy availability.
-3. Buy action depends on explicit stock/availability state (`In stock` vs `Out of stock`).
-4. Seller can update existing product metadata and availability state after publishing.
+### WF-10: Persistent inventory and stock visibility
+1. Seller can upload/save products even when no market session is open. (Implemented: ANT-74)
+2. Product video stays visible on seller page regardless of buy availability. (Implemented)
+3. Buy action depends on explicit stock/availability state (`In stock` vs `Out of stock`). (Implemented)
+4. Seller can update existing product metadata and availability state after publishing. (Implemented)
 
 ## 9) API Surface (planned, backward-compatible additions)
 
@@ -306,9 +312,9 @@ Marketplace and operations:
 16. `GET /v1/chats/:id/messages`
 17. `POST /v1/chats/:id/messages`
 18. Extend `GET /v1/feed` with listing/seller/session freshness fields while keeping existing fields unchanged.
-19. Planned: seller payment template endpoints for one-tap chat insertion.
-20. Planned: persistent inventory endpoints/state to support uploads outside active market sessions.
-21. Planned: explicit listing availability (`in_stock`/`out_of_stock`) in listing and feed contracts.
+19. Seller payment template endpoints for one-tap chat insertion. (In Review: ANT-72)
+20. Persistent inventory endpoints/state to support uploads outside active market sessions. (Implemented: ANT-74)
+21. Explicit listing availability (`in_stock`/`out_of_stock`) in listing and feed contracts. (Implemented: ANT-74)
 
 ## 10) Shared Contract Additions (`packages/types`)
 
@@ -318,47 +324,51 @@ Add types:
 3. `Role`
 4. `SellerApplicationStatus` (legacy flow; planned UI deprecation)
 5. `MarketSession`, `Listing`, `BasketItem`, `Offer`, `Deal`, `ChatThread`, `Message`, `Announcement`, `Notification`
-6. Planned additions: `ListingAvailabilityStatus`, `SellerPaymentTemplate`
+6. `ListingAvailabilityStatus` (Implemented: ANT-74). `SellerPaymentTemplate` (In Review: ANT-72).
 
 Add validation constants:
 1. `MIN_OFFER_RULE = offer >= listedPrice`
 2. allowed `DealStatus` transitions map
 
-## 11) What Was Missed (must be addressed)
+## 11) Delivered (moved from missed)
 
-1. Role policy hardening:
-1. Enforce admin allowlist correctly for seeded/admin numbers.
-2. Remove/hide self-serve seller apply/role mutation UI for non-admin users.
-2. Auth reliability:
-1. Recalibrate OTP request/verify throttling to avoid false-positive `Too many requests` during normal testing/login.
-3. Navigation polish:
-1. Add bottom tab icons (Feed/Inbox/Activity/Profile) and keep safe-area compliant spacing.
-4. Seller-to-buyer conversion UX:
-1. Add one-tap payment/help template insertion in deal chat.
-5. Inventory model extension:
-1. Support listing creation outside active market day.
-2. Keep products visible even when unavailable for purchase.
-3. Add explicit `In stock` / `Out of stock` availability in API + mobile UI.
-6. Auth UX polish:
-1. Explicit register vs sign-in affordance on auth screen.
-2. Remove hardcoded test placeholder from phone input.
-7. Feed conversion surface:
-1. Listing title, price, and description overlay on reels.
-2. Primary CTA for basket/offer directly on feed.
-3. Tap-to-detail navigation to dedicated listing screen.
-8. Inbox visual quality:
-1. Replace raw UUIDs with listing titles.
-2. Remove debug-field dump; use clean cards with avatar, preview, timestamp, unread state.
-9. Activity role-awareness:
-1. Tab filters should match user's allowed roles.
-2. Relative timestamp formatting instead of raw dates.
-10. Profile depth:
-1. Avatar, buyer/seller stats, settings section.
-2. Role-appropriate copy and placeholders.
-11. Existing platform hardening that remains relevant:
-1. reliability controls (idempotent offer acceptance, optimistic locking),
-2. observability dashboards and audit completeness,
-3. moderation rules for video/listing quality.
+1. Role policy hardening (ANT-69, ANT-80):
+   - Admin allowlist governance API is implemented and enforced during OTP verification and role switch.
+   - Non-admin users no longer see self-serve seller apply/role mutation UI.
+2. Auth reliability (ANT-71):
+   - OTP throttling recalibrated for normal beta login retry cadence.
+3. Navigation polish (ANT-70):
+   - Bottom tab icons added with safe-area compliant spacing.
+4. Inventory model extension (ANT-74):
+   - Listing creation supported outside active market day.
+   - `in_stock`/`out_of_stock` availability state in API and mobile UI.
+5. Activity role-awareness (ANT-75):
+   - Tab filters match user's allowed roles.
+   - Relative timestamp formatting implemented.
+6. Feed source alignment (ANT-73):
+   - Reels feed now uses marketplace listing/video entities instead of in-memory demo videos.
+
+## 11) What Remains (P6 screen-audit UX polish)
+
+1. Seller-to-buyer conversion UX (ANT-72 in review):
+   - One-tap payment/help template insertion in deal chat.
+2. Auth UX polish (ANT-85 planned):
+   - Explicit register vs sign-in affordance on auth screen.
+   - Remove hardcoded test placeholder from phone input.
+3. Feed conversion surface (ANT-86 planned):
+   - Listing title, price, and description overlay on reels.
+   - Primary CTA for basket/offer directly on feed.
+   - Tap-to-detail navigation to dedicated listing screen.
+4. Inbox visual quality (ANT-87 planned):
+   - Replace raw UUIDs with listing titles.
+   - Remove debug-field dump; use clean cards with avatar, preview, timestamp, unread state.
+5. Profile depth (ANT-88 planned):
+   - Avatar, buyer/seller stats, settings section.
+   - Role-appropriate copy and placeholders.
+6. Existing platform hardening that remains relevant:
+   - Reliability controls (idempotent offer acceptance, optimistic locking).
+   - Observability dashboards and audit completeness.
+   - Moderation rules for video/listing quality.
 
 ## 12) Prioritized Delivery Roadmap
 
@@ -369,8 +379,8 @@ Add validation constants:
 1. OTP auth and refresh sessions. (Done: ANT-28, 2026-03-05)
 2. `me` profile endpoints and role switch. (Done)
 3. Auth middleware and role guards. (Done)
-4. Admin-only role governance enforcement + non-admin UI hardening. (Planned)
-5. Legacy seller-application flow deprecation from mobile UI. (Planned)
+4. Admin-only role governance enforcement + non-admin UI hardening. (Done: ANT-69, ANT-80, 2026-05-05)
+5. Legacy seller-application flow deprecation from mobile UI. (Done)
 
 ### P2 (sell-critical transaction core)
 1. Market day open/close.
@@ -391,12 +401,15 @@ Add validation constants:
 4. Moderation and abuse controls.
 5. Analytics and operational dashboards.
 
-### P5 (manual-test product alignment, March 14, 2026)
-1. OTP throttle calibration for real-world login cadence.
-2. Bottom tab icon pass and navigation affordance polish.
-3. One-tap seller payment-info message in chat.
-4. Persistent catalog outside market day.
-5. `In stock` / `Out of stock` status across API and mobile.
+### P5 (manual-test product alignment, May 5, 2026)
+1. OTP throttle calibration for real-world login cadence. (Done: ANT-71)
+2. Bottom tab icon pass and navigation affordance polish. (Done: ANT-70)
+3. One-tap seller payment-info message in chat. (In Review: ANT-72)
+4. Persistent catalog outside market day. (Done: ANT-74)
+5. `In stock` / `Out of stock` status across API and mobile. (Done: ANT-74)
+6. Feed source alignment with marketplace domain state. (Done: ANT-73)
+7. Buyer basket/offer submission UI. (Done: ANT-81)
+8. Inbox/Activity workflow depth. (Done: ANT-75)
 
 ### P6 (screen-audit UX polish, May 5, 2026)
 1. Auth screen explicit register affordance + placeholder cleanup (ANT-85).
@@ -429,24 +442,13 @@ E2E tests:
 5. Persistent inventory scenario (planned): upload outside market day, verify visibility and stock badge behavior.
 
 ### 13.1 Current UX/E2E quality gaps (observed on March 14, 2026)
-These are implementation quality gaps observed during role-based iOS walkthroughs with seeded data:
+These are implementation quality gaps observed during role-based iOS walkthroughs with seeded data. Resolved items are struck through; remaining gaps moved to Section 13.2.
 
-1. Feed source is still decoupled from marketplace domain:
-1. Reels feed uses in-memory demo videos rather than listing/video entities in SQLite marketplace tables.
-2. This makes transactional state (listing sold/day_closed) only partially reflected in feed UX.
-2. Screen-level layout quality issues:
-1. Header/title text can overlap with status area on Inbox/Activity.
-2. Tools overlay (Expo Go) can obscure top-right content in walkthroughs.
-3. Workflow depth in mobile UI remains limited:
-1. Inbox currently shows deal summary cards but no dedicated threaded chat detail screen in tab flow.
-2. Activity is event-list only; lacks filtering/grouping for buyer vs seller operations.
-4. Role/access behavior mismatches for seeded beta users:
-1. Seeded admin phone currently lands as buyer-only.
-2. Non-admin users still encounter role mutation affordances in places where they should be hidden.
-5. OTP login reliability:
-1. `Too many requests` appears during normal manual testing cadence and should be recalibrated.
-6. Bottom tab navigation affordance gap:
-1. Missing tab icons reduce discoverability and fail expected mobile navigation patterns.
+1. ~~Feed source is still decoupled from marketplace domain~~ (Resolved: ANT-73, 2026-05-05).
+2. ~~Workflow depth in mobile UI remains limited~~ (Resolved: ANT-75, 2026-05-05).
+3. ~~Role/access behavior mismatches for seeded beta users~~ (Resolved: ANT-69, ANT-80, 2026-05-05).
+4. ~~OTP login reliability~~ (Resolved: ANT-71, 2026-05-05).
+5. ~~Bottom tab navigation affordance gap~~ (Resolved: ANT-70, 2026-05-05).
 
 ### 13.2 Current UX/E2E quality gaps (observed on May 5, 2026)
 Additional gaps identified during iOS role screen audit with fully seeded marketplace data:
@@ -462,39 +464,37 @@ Additional gaps identified during iOS role screen audit with fully seeded market
 1. Listing title is hidden; raw UUID (`Listing 948433d2-...`) is displayed instead.
 2. Cards expose internal fields (deal status, active address, correction count, chat ID) in an unstructured wall of text.
 3. Missing visual hierarchy: unread indicator, avatar/seller identity, clean message preview, and timestamp formatting.
-4. Activity tab filters are not role-aware:
-1. Buyer activity screen shows a "Selling" filter tab, which is irrelevant and confusing.
-2. Seller activity screen shows a "Buying" filter tab, which is irrelevant and confusing.
-3. Filter visibility should be conditional on the user's allowed/active roles.
+4. ~~Activity tab filters are not role-aware~~ (Resolved: ANT-75, 2026-05-05).
 5. Profile screen is under-featured:
-1. Only phone, user ID, active role, and a single display-name field are shown.
-2. No avatar/profile photo upload or placeholder.
-3. No account settings (notifications, privacy, language, logout confirmation).
-4. No buyer stats (offers made, deals won) or seller stats (listings sold, sessions held).
-5. Display name placeholder text is "Antique seller" even for buyer-only accounts.
+   1. Only phone, user ID, active role, and a single display-name field are shown.
+   2. No avatar/profile photo upload or placeholder.
+   3. No account settings (notifications, privacy, language, logout confirmation).
+   4. No buyer stats (offers made, deals won) or seller stats (listings sold, sessions held).
+   5. Display name placeholder text is "Antique seller" even for buyer-only accounts.
 6. Additional polish gaps:
-1. Activity timestamps use raw locale date strings (`5.5.2026, 18:28:38`) instead of relative human-readable time.
-2. Seller feed shows an "Upload" button but no seller dashboard or inventory management entry point.
-3. No search or discovery affordance anywhere in the tab navigation.
+   1. ~~Activity timestamps use raw locale date strings~~ (Resolved: ANT-75, 2026-05-05).
+   2. Seller feed shows an "Upload" button but no seller dashboard or inventory management entry point.
+   3. No search or discovery affordance anywhere in the tab navigation.
 
-### 13.2 Beta UI-first priorities (replanned on March 14, 2026)
+### 13.2 Beta UI-first priorities (replanned on May 5, 2026)
 For current beta, prioritize visual quality and flow clarity before deeper security/infra hardening:
 
 1. Auth-first navigation:
-1. Guest sees dedicated login/register route first.
-2. App tabs are visible only after login.
+   1. Guest sees dedicated login/register route first.
+   2. App tabs are visible only after login. (Implemented)
 2. Role clarity in UI:
-1. Buyer cannot see seller-only actions such as upload.
-2. Seller/admin-only actions are visible only when active admin-managed role allows them.
-3. Non-admin users cannot self-upgrade role and never see role-switch controls.
+   1. Buyer cannot see seller-only actions such as upload. (Implemented)
+   2. Seller/admin-only actions are visible only when active admin-managed role allows them. (Implemented)
+   3. Non-admin users cannot self-upgrade role and never see role-switch controls. (Implemented)
 3. Profile simplification:
-1. Profile focuses on user account data and admin-only role controls.
-2. Login/register lives on dedicated auth screen, not inside Profile.
-3. Remove self-serve seller application controls for non-admin users.
+   1. Profile focuses on user account data and admin-only role controls. (Implemented)
+   2. Login/register lives on dedicated auth screen, not inside Profile. (Implemented)
+   3. Remove self-serve seller application controls for non-admin users. (Implemented)
 4. Visual finishing pass:
-1. Safe-area and spacing fixes on Feed/Inbox/Activity/Profile.
-2. Copy cleanup for unclear labels (for example, ambiguous `Updates` button naming).
-3. Add bottom tab icons and keep visual QA artifact-driven using role-by-role screenshots from iOS walkthroughs.
+   1. Safe-area and spacing fixes on Feed/Inbox/Activity/Profile. (Implemented)
+   2. Copy cleanup for unclear labels (for example, ambiguous `Updates` button naming). (Implemented)
+   3. Add bottom tab icons and keep visual QA artifact-driven using role-by-role screenshots from iOS walkthroughs. (Implemented: ANT-70)
+5. Feed conversion surface and inbox overhaul remain the primary open UX work (ANT-86, ANT-87).
 
 Delivery gate before moving ticket to `In Review`:
 1. `pnpm lint`
