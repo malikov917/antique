@@ -61,15 +61,19 @@ export async function registerMeRoutes(app: FastifyInstance, deps: MeRouteDeps):
     try {
       const auth = await deps.authService.authenticateFromAuthorizationHeader(getAuthorizationHeader(request));
       const body = assertObjectBody(request.body);
-      assertOnlySupportedKeys(body, ["displayName"]);
+      assertOnlySupportedKeys(body, ["displayName", "paymentInfo"]);
       if (body.displayName !== undefined && body.displayName !== null && typeof body.displayName !== "string") {
         throw new AuthError("invalid_display_name", "Display name must be a string or null", 400);
+      }
+      if (body.paymentInfo !== undefined && body.paymentInfo !== null && typeof body.paymentInfo !== "string") {
+        throw new AuthError("invalid_payment_info", "Payment info must be a string or null", 400);
       }
 
       return {
         user: deps.authService.updateMe({
           userId: auth.user.id,
-          displayName: body.displayName as string | null | undefined
+          displayName: body.displayName as string | null | undefined,
+          paymentInfo: body.paymentInfo as string | null | undefined
         })
       };
     } catch (error) {

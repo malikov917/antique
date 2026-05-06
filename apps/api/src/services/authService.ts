@@ -23,6 +23,7 @@ interface UserRow {
   id: string;
   phone_e164: string;
   display_name: string | null;
+  payment_info: string | null;
   tenant_id: string;
   allowed_roles: string;
   active_role: string;
@@ -122,6 +123,7 @@ export interface AuthContext {
 export interface UpdateMeInput {
   userId: string;
   displayName?: string | null;
+  paymentInfo?: string | null;
 }
 
 export interface SwitchRoleInput {
@@ -172,6 +174,17 @@ function normalizeDisplayName(input: string | null): string | null {
   const trimmed = input.trim();
   if (!trimmed || trimmed.length > 80) {
     throw new AuthError("invalid_display_name", "Display name must be between 1 and 80 characters", 400);
+  }
+  return trimmed;
+}
+
+function normalizePaymentInfo(input: string | null): string | null {
+  if (input === null) {
+    return null;
+  }
+  const trimmed = input.trim();
+  if (!trimmed || trimmed.length > 500) {
+    throw new AuthError("invalid_payment_info", "Payment info must be between 1 and 500 characters", 400);
   }
   return trimmed;
 }
@@ -740,11 +753,23 @@ export class AuthService {
 
   updateMe(input: UpdateMeInput): AuthUser {
     const currentUser = this.getRequiredUserById(input.userId);
+    let updated = false;
 
     if (input.displayName !== undefined) {
       this.sqlite
         .prepare("UPDATE users SET display_name = ? WHERE id = ?")
         .run(normalizeDisplayName(input.displayName), currentUser.id);
+      updated = true;
+    }
+
+    if (input.paymentInfo !== undefined) {
+      this.sqlite
+        .prepare("UPDATE users SET payment_info = ? WHERE id = ?")
+        .run(normalizePaymentInfo(input.paymentInfo), currentUser.id);
+      updated = true;
+    }
+
+    if (updated) {
       return this.asAuthUser(this.getRequiredUserById(currentUser.id));
     }
 
@@ -837,6 +862,7 @@ export class AuthService {
       id: user.id,
       phone: user.phone_e164,
       displayName: user.display_name,
+      paymentInfo: user.payment_info,
       tenantId: user.tenant_id,
       allowedRoles: parseAllowedRoles(user.allowed_roles),
       activeRole: parseActiveRole(user.active_role),
