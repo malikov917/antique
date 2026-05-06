@@ -163,12 +163,23 @@ async function refreshAccessToken({ apiBaseUrl, refreshToken }) {
   };
 }
 
-function updateUserRoles({ dbPath, userId, allowedRoles, activeRole }) {
+function insertAdminAllowlist({ dbPath, phone }) {
   const sqlite = new Database(dbPath);
   try {
     sqlite
-      .prepare("UPDATE users SET allowed_roles = ?, active_role = ? WHERE id = ?")
-      .run(JSON.stringify(allowedRoles), activeRole, userId);
+      .prepare("INSERT OR IGNORE INTO admin_allowlist(phone_e164, created_at) VALUES (?, ?)")
+      .run(phone, Date.now());
+  } finally {
+    sqlite.close();
+  }
+}
+
+function updateUserActiveRole({ dbPath, userId, activeRole }) {
+  const sqlite = new Database(dbPath);
+  try {
+    sqlite
+      .prepare("UPDATE users SET active_role = ? WHERE id = ?")
+      .run(activeRole, userId);
   } finally {
     sqlite.close();
   }
@@ -196,6 +207,8 @@ async function main() {
     wf3DayCloseBehaviorNotifications: { ok: false }
   };
 
+  insertAdminAllowlist({ dbPath, phone: adminPhone });
+
   const seller = await createAuthenticatedSession({
     apiBaseUrl,
     apiLogFile,
@@ -212,10 +225,9 @@ async function main() {
     label: "admin"
   });
 
-  updateUserRoles({
+  updateUserActiveRole({
     dbPath,
     userId: admin.userId,
-    allowedRoles: ["buyer", "admin"],
     activeRole: "admin"
   });
 

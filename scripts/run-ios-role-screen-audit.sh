@@ -177,7 +177,7 @@ seed_marketplace_data() {
   local admin_user_id="$7"
   local refreshed_admin_token_and_id
 
-  sqlite3 "$DB_PATH" "UPDATE users SET allowed_roles='[\"buyer\",\"seller\",\"admin\"]', active_role='admin' WHERE id='${admin_user_id}';"
+  sqlite3 "$DB_PATH" "UPDATE users SET active_role='admin' WHERE id='${admin_user_id}';"
   refreshed_admin_token_and_id="$(request_access_token "$ADMIN_PHONE" "audit-admin-ios-elevated")"
   admin_token="${refreshed_admin_token_and_id%%|*}"
 
@@ -351,6 +351,7 @@ SELLER_TOKEN_AND_ID="$(request_access_token "$SELLER_PHONE" "audit-seller-ios")"
 SELLER_TOKEN="${SELLER_TOKEN_AND_ID%%|*}"
 SELLER_USER_ID="${SELLER_TOKEN_AND_ID##*|}"
 
+sqlite3 "$DB_PATH" "INSERT OR IGNORE INTO admin_allowlist(phone_e164, created_at) VALUES ('${ADMIN_PHONE}', $(date +%s)000);"
 ADMIN_TOKEN_AND_ID="$(request_access_token "$ADMIN_PHONE" "audit-admin-ios")"
 ADMIN_TOKEN="${ADMIN_TOKEN_AND_ID%%|*}"
 ADMIN_USER_ID="${ADMIN_TOKEN_AND_ID##*|}"
