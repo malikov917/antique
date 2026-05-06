@@ -12,6 +12,7 @@ import {
   type ViewToken
 } from "react-native";
 import { FlashList, type FlashListRef } from "@shopify/flash-list";
+import { useRouter } from "expo-router";
 import { ReelItem } from "../components/ReelItem";
 import { UploadFlow } from "../components/UploadFlow";
 import { OfferFlow } from "../components/OfferFlow";
@@ -19,10 +20,13 @@ import type { ReelPlayableItem } from "../hooks/useReelsFeed";
 import { type FeedEntry, buildFeedEntries, buildStoryRings, useReelsFeed } from "../hooks/useReelsFeed";
 import { useVideoPrefetch } from "../hooks/useVideoPrefetch";
 import { useAuthSession } from "../auth/session";
+import { useBuyerStatus } from "../hooks/useBuyerStatus";
+import { useBasketAdd } from "../hooks/useBasketAdd";
 
 const { height } = Dimensions.get("window");
 
 export function ReelsScreen() {
+  const router = useRouter();
   const { accessToken, user } = useAuthSession();
   const [activeIndex, setActiveIndex] = useState(0);
   const [seenAuthors, setSeenAuthors] = useState<Set<string>>(new Set());
@@ -49,6 +53,64 @@ export function ReelsScreen() {
 
   useVideoPrefetch(items, activeReelIndex);
 
+  const {
+    basketListingIds,
+    offerListingIds,
+    addBasket: markBasket,
+    addOffer: markOffer
+  } = useBuyerStatus(accessToken);
+
+  const handleNavigate = useCallback(
+    (item: ReelPlayableItem) => {
+      if (item.listingId) {
+        router.push({
+          pathname: "/listing/[id]",
+          params: {
+            id: item.listingId,
+            data: JSON.stringify(item)
+          }
+        });
+      }
+    },
+    [router]
+  );
+
+  const [basketTarget, setBasketTarget] = useState<string | null>(null);
+  const basketAdd = useBasketAdd({
+    accessToken,
+    listingId: basketTarget ?? "",
+    onSuccess: () => {
+      if (basketTarget) {
+        markBasket(basketTarget);
+      }
+      setBasketTarget(null);
+    }
+  });
+
+  useEffect(() => {
+    if (basketTarget && basketTarget !== "") {
+      void basketAdd.add();
+    }
+  }, [basketTarget, basketAdd]);
+
+  const handleAddToBasket = useCallback((item: ReelPlayableItem) => {
+    if (item.listingId) {
+      setBasketTarget(item.listingId);
+    }
+  }, []);
+
+  const handleMakeOffer = useCallback((item: ReelPlayableItem) => {
+    setOfferItem(item);
+  }, []);
+
+  const handleOfferDone = useCallback(() => {
+    if (offerItem?.listingId) {
+      markOffer(offerItem.listingId);
+    }
+    setOfferItem(null);
+    refresh();
+  }, [offerItem, markOffer, refresh]);
+
   const onViewableItemsChanged = useRef(
     ({ viewableItems }: { viewableItems: Array<ViewToken> }) => {
       const candidate = viewableItems.find((entry) => (entry.index ?? -1) >= 0);
@@ -66,11 +128,15 @@ export function ReelsScreen() {
           active={index === activeIndex}
           itemIndex={index}
           userRole={user?.activeRole}
-          onMakeOffer={setOfferItem}
+          inBasket={item.reel.listingId ? basketListingIds.has(item.reel.listingId) : false}
+          hasOffer={item.reel.listingId ? offerListingIds.has(item.reel.listingId) : false}
+          onNavigate={handleNavigate}
+          onAddToBasket={handleAddToBasket}
+          onMakeOffer={handleMakeOffer}
         />
       ) : null;
     },
-    [activeIndex, scrollToTop, user?.activeRole]
+    [activeIndex, user?.activeRole, basketListingIds, offerListingIds, handleNavigate, handleAddToBasket, handleMakeOffer]
   );
 
   useEffect(() => {
@@ -180,10 +246,7 @@ export function ReelsScreen() {
               <OfferFlow
                 item={offerItem}
                 accessToken={accessToken}
-                onDone={() => {
-                  setOfferItem(null);
-                  refresh();
-                }}
+                onDone={handleOfferDone}
               />
             ) : null}
           </View>
@@ -213,30 +276,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     paddingVertical: 8,
     borderRadius: 999
-  },
-  buyabilityPill: {
-    position: "absolute",
-    top: 164,
-    alignSelf: "center",
-    borderRadius: 999,
-    borderWidth: 1,
-    borderColor: "#3a3a3a",
-    backgroundColor: "rgba(0,0,0,0.45)",
-    paddingHorizontal: 12,
-    paddingVertical: 7
-  },
-  buyabilityOpen: {
-    borderColor: "rgba(126, 205, 123, 0.9)",
-    backgroundColor: "rgba(33, 61, 31, 0.72)"
-  },
-  buyabilityPaused: {
-    borderColor: "rgba(255, 164, 127, 0.95)",
-    backgroundColor: "rgba(75, 42, 28, 0.72)"
-  },
-  buyabilityText: {
-    color: "#f1f1f1",
-    fontSize: 12,
-    fontWeight: "700"
   },
   metaText: {
     color: "#ececec"

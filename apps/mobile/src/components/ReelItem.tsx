@@ -17,6 +17,11 @@ function formatPrice(cents: number | undefined, currency: string | undefined): s
   return `${currency} ${amount}`;
 }
 
+function truncate(text: string, maxLength: number): string {
+  if (text.length <= maxLength) return text;
+  return text.slice(0, maxLength - 3) + "...";
+}
+
 function BuyabilityPill({ item }: { item: ReelPlayableItem }) {
   if (!item.listingStatus) {
     return null;
@@ -43,26 +48,57 @@ export function ReelItem({
   active,
   itemIndex,
   userRole,
+  inBasket,
+  hasOffer,
+  onNavigate,
+  onAddToBasket,
   onMakeOffer
 }: {
   item: ReelPlayableItem;
   active: boolean;
   itemIndex: number;
   userRole?: AuthRole | null;
+  inBasket?: boolean;
+  hasOffer?: boolean;
+  onNavigate?: (item: ReelPlayableItem) => void;
+  onAddToBasket?: (item: ReelPlayableItem) => void;
   onMakeOffer?: (item: ReelPlayableItem) => void;
 }) {
   const player = useCompatVideoPlayer(item.streamUrl);
   const playback = useReelPlaybackControls({ active, player });
 
-  const canMakeOffer =
+  const canInteract =
     userRole === "buyer" &&
     item.listingStatus === "live" &&
     item.availability === "in_stock" &&
     typeof item.listedPriceCents === "number";
 
+  const ctaLabel = useMemo(() => {
+    if (!canInteract) {
+      if (item.listingStatus === "sold") return "Sold";
+      if (item.listingStatus === "day_closed") return "Day closed";
+      if (item.availability === "out_of_stock") return "Out of stock";
+      return "Unavailable";
+    }
+    if (hasOffer) return "Offer Submitted";
+    if (inBasket) return "Make Offer";
+    return "Add to Basket";
+  }, [canInteract, hasOffer, inBasket, item]);
+
+  const ctaDisabled = !canInteract || hasOffer;
+
+  const handleCtaPress = () => {
+    if (ctaDisabled) return;
+    if (inBasket) {
+      onMakeOffer?.(item);
+    } else {
+      onAddToBasket?.(item);
+    }
+  };
+
   return (
     <View style={styles.wrapper} testID={`reel-item-${itemIndex}`}>
-      <Pressable style={styles.videoContainer} onPress={playback.togglePlayback}>
+      <Pressable style={styles.videoContainer} onPress={() => onNavigate?.(item)}>
         <View style={styles.videoFrame}>
           <VideoView
             style={styles.video}
@@ -83,23 +119,30 @@ export function ReelItem({
               onScrubEnd={playback.endScrub}
               testID={`reel-progress-${itemIndex}`}
             />
+            <View style={styles.infoBlock}>
+              <Text style={styles.title} numberOfLines={1}>
+                {item.title || "Untitled listing"}
+              </Text>
+              {item.listedPriceCents ? (
+                <Text style={styles.price}>{formatPrice(item.listedPriceCents, item.currency)}</Text>
+              ) : null}
+              <Text style={styles.author}>@{item.author}</Text>
+              <Text style={styles.description} numberOfLines={2}>
+                {truncate(item.caption, 120)}
+              </Text>
+            </View>
             <BuyabilityPill item={item} />
-            {canMakeOffer ? (
+            {userRole === "buyer" ? (
               <Pressable
-                style={styles.offerButton}
-                onPress={() => onMakeOffer?.(item)}
-                testID={`reel-offer-button-${itemIndex}`}
+                style={[styles.ctaButton, ctaDisabled && styles.ctaButtonDisabled]}
+                disabled={ctaDisabled}
+                onPress={handleCtaPress}
+                testID={`reel-cta-button-${itemIndex}`}
               >
-                <Text style={styles.offerButtonText}>Make offer</Text>
+                <Text style={styles.ctaButtonText}>{ctaLabel}</Text>
               </Pressable>
             ) : null}
             <Text style={styles.freshness}>{formatFreshnessLabel(item.freshnessAgeSec, item.freshnessUpdatedAt)}</Text>
-            <Text style={styles.author}>@{item.author}</Text>
-            {item.title ? <Text style={styles.title}>{item.title}</Text> : null}
-            {item.listedPriceCents ? (
-              <Text style={styles.price}>{formatPrice(item.listedPriceCents, item.currency)}</Text>
-            ) : null}
-            <Text style={styles.caption}>{item.caption}</Text>
           </View>
         </View>
       </Pressable>
@@ -176,6 +219,30 @@ const styles = StyleSheet.create({
     right: 20,
     gap: 8
   },
+  infoBlock: {
+    gap: 4,
+    marginBottom: 4
+  },
+  title: {
+    color: "#ffffff",
+    fontSize: 18,
+    fontWeight: "700"
+  },
+  price: {
+    color: "#f7d6a0",
+    fontSize: 16,
+    fontWeight: "700"
+  },
+  author: {
+    color: "#aaaaaa",
+    fontSize: 13,
+    fontWeight: "600"
+  },
+  description: {
+    color: "#eeeeee",
+    fontSize: 14,
+    lineHeight: 20
+  },
   freshness: {
     alignSelf: "flex-start",
     backgroundColor: "rgba(5,5,5,0.55)",
@@ -211,26 +278,7 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: "700"
   },
-  author: {
-    color: "#ffffff",
-    fontSize: 18,
-    fontWeight: "700"
-  },
-  title: {
-    color: "#ffffff",
-    fontSize: 16,
-    fontWeight: "600"
-  },
-  price: {
-    color: "#f7d6a0",
-    fontSize: 14,
-    fontWeight: "700"
-  },
-  caption: {
-    color: "#eeeeee",
-    fontSize: 15
-  },
-  offerButton: {
+  ctaButton: {
     alignSelf: "flex-start",
     backgroundColor: "#f8f8f8",
     borderRadius: 999,
@@ -238,7 +286,10 @@ const styles = StyleSheet.create({
     paddingVertical: 8,
     marginBottom: 4
   },
-  offerButtonText: {
+  ctaButtonDisabled: {
+    opacity: 0.5
+  },
+  ctaButtonText: {
     color: "#111111",
     fontWeight: "700",
     fontSize: 13

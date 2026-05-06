@@ -1,16 +1,19 @@
 import type {
+  BuyerStatusResponse,
   MeResponse,
   RoleSwitchRequest,
   RoleSwitchResponse,
   UpdateMeRequest
 } from "@antique/types";
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
+import type { Database } from "better-sqlite3";
 import { AuthError } from "../auth/errors.js";
 import { requireRoleAllowed } from "../auth/guards.js";
 import { type AuthService } from "../services/authService.js";
 
 interface MeRouteDeps {
   authService: AuthService;
+  sqlite?: Database;
 }
 
 function sendAuthError(reply: FastifyReply, error: AuthError): ReturnType<FastifyReply["send"]> {
@@ -113,4 +116,32 @@ export async function registerMeRoutes(app: FastifyInstance, deps: MeRouteDeps):
       }
     }
   );
+
+  app.get<{ Reply: BuyerStatusResponse }>("/v1/me/buyer-status", async (request, reply) => {
+    try {
+      const auth = await deps.authService.authenticateFromAuthorizationHeader(getAuthorizationHeader(request));
+      const basketListingIds: string[] = [];
+      const offerListingIds: string[] = [];
+      if (deps.sqlite) {
+        const basketRows = deps.sqlite
+          .prepare("SELECT listing_id FROM basket_items WHERE buyer_user_id = ?")
+          .all(auth.user.id) as Array<{ listing_id: string }>;
+        basketListingIds.push(...basketRows.map((r) => r.listing_id));
+
+        const offerRows = deps.sqlite
+          .prepare("SELECT listing_id FROM offers WHERE buyer_user_id = ? AND status = 'submitted'")
+          .all(auth.user.id) as Array<{ listing_id: string }>;
+        offerListingIds.push(...offerRows.map((r) => r.listing_id));
+      }
+      return {
+        basketListingIds,
+        offerListingIds
+      };
+    } catch (error) {
+      if (error instanceof AuthError) {
+        return sendAuthError(reply, error);
+      }
+      throw error;
+    }
+  });
 }
