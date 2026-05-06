@@ -222,6 +222,11 @@ export interface MeResponse {
   user: AuthUser;
 }
 
+export interface BuyerStatusResponse {
+  basketListingIds: string[];
+  offerListingIds: string[];
+}
+
 export interface UpdateMeRequest {
   displayName?: string | null;
   paymentInfo?: string | null;

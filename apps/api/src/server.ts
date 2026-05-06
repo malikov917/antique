@@ -208,7 +208,7 @@ export async function buildServer(params: BuildServerParams): Promise<FastifyIns
     authService,
     otpVerifyIpRateLimitMax: params.config.authOtpVerifyPerPhoneIpPerHour
   });
-  await registerMeRoutes(app, { authService });
+  await registerMeRoutes(app, { authService, sqlite: dbClient.sqlite });
   await registerSellerRoutes(app, {
     authService,
     sellerApplicationService,
