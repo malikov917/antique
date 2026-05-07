@@ -2,11 +2,10 @@ import { ActivityIndicator, FlatList, Pressable, StyleSheet, Text, View } from "
 import { useRouter } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import type { NotificationItem } from "@antique/types";
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { useAuthSession } from "../auth/session";
 import { useNotifications } from "../hooks/useNotifications";
-
-type ActivityFilter = "all" | "buyer" | "seller";
+import { formatRelativeTime, getVisibleFilters, type ActivityFilter } from "./activityHelpers";
 
 type ActivityEntry =
   | {
@@ -97,12 +96,16 @@ function groupLabel(dateString: string): string {
   return date.toLocaleDateString(undefined, { weekday: "long", month: "short", day: "numeric" });
 }
 
+
+
 export function ActivityScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
-  const { accessToken } = useAuthSession();
+  const { accessToken, user } = useAuthSession();
   const { notifications, announcements, loading, error, refresh } = useNotifications(accessToken);
   const [filter, setFilter] = useState<ActivityFilter>("all");
+
+  const visibleFilters = useMemo(() => getVisibleFilters(user?.allowedRoles), [user?.allowedRoles]);
 
   const allEntries: ActivityEntry[] = [
     ...notifications.map((item) => ({
@@ -163,7 +166,7 @@ export function ActivityScreen() {
           <Text style={styles.badge}>{toLabel(item.eventType)}</Text>
         </View>
         <Text style={styles.cardBody}>{item.body}</Text>
-        <Text style={styles.cardMeta}>{new Date(item.createdAt).toLocaleString()}</Text>
+        <Text style={styles.cardMeta}>{formatRelativeTime(item.createdAt)}</Text>
       </View>
     );
   };
@@ -196,7 +199,7 @@ export function ActivityScreen() {
           </View>
 
           <View style={styles.filterRow}>
-            {(["all", "buyer", "seller"] as ActivityFilter[]).map((f) => (
+            {visibleFilters.map((f) => (
               <Pressable
                 key={f}
                 style={[styles.filterChip, filter === f ? styles.filterChipActive : null]}
