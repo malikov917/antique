@@ -9,8 +9,11 @@ interface ChatRow {
   id: string;
   deal_id: string;
   listing_id: string;
+  listing_title: string;
   seller_user_id: string;
+  seller_display_name: string | null;
   buyer_user_id: string;
+  buyer_display_name: string | null;
   tenant_id: string | null;
   created_at: number;
   updated_at: number;
@@ -33,8 +36,11 @@ function toChat(row: ChatRow): Chat {
     id: row.id,
     dealId: row.deal_id,
     listingId: row.listing_id,
+    listingTitle: row.listing_title ?? "",
     sellerUserId: row.seller_user_id,
+    sellerDisplayName: row.seller_display_name ?? "",
     buyerUserId: row.buyer_user_id,
+    buyerDisplayName: row.buyer_display_name ?? "",
     createdAt: toIso(row.created_at),
     updatedAt: toIso(row.updated_at)
   };
@@ -62,18 +68,24 @@ export class SqliteChatDomainService implements ChatDomainService {
       .prepare(
         `
           SELECT
-            id,
-            deal_id,
-            listing_id,
-            seller_user_id,
-            buyer_user_id,
-            tenant_id,
-            created_at,
-            updated_at
+            chats.id,
+            chats.deal_id,
+            chats.listing_id,
+            COALESCE(listings.title, '') AS listing_title,
+            chats.seller_user_id,
+            COALESCE(seller.display_name, '') AS seller_display_name,
+            chats.buyer_user_id,
+            COALESCE(buyer.display_name, '') AS buyer_display_name,
+            chats.tenant_id,
+            chats.created_at,
+            chats.updated_at
           FROM chats
-          WHERE (seller_user_id = ? OR buyer_user_id = ?)
-            AND tenant_id = ?
-          ORDER BY updated_at DESC, id DESC
+          LEFT JOIN listings ON listings.id = chats.listing_id
+          LEFT JOIN users AS seller ON seller.id = chats.seller_user_id
+          LEFT JOIN users AS buyer ON buyer.id = chats.buyer_user_id
+          WHERE (chats.seller_user_id = ? OR chats.buyer_user_id = ?)
+            AND chats.tenant_id = ?
+          ORDER BY chats.updated_at DESC, chats.id DESC
         `
       )
       .all(params.userId, params.userId, tenantId) as ChatRow[];
@@ -138,16 +150,22 @@ export class SqliteChatDomainService implements ChatDomainService {
       .prepare(
         `
           SELECT
-            id,
-            deal_id,
-            listing_id,
-            seller_user_id,
-            buyer_user_id,
-            tenant_id,
-            created_at,
-            updated_at
+            chats.id,
+            chats.deal_id,
+            chats.listing_id,
+            COALESCE(listings.title, '') AS listing_title,
+            chats.seller_user_id,
+            COALESCE(seller.display_name, '') AS seller_display_name,
+            chats.buyer_user_id,
+            COALESCE(buyer.display_name, '') AS buyer_display_name,
+            chats.tenant_id,
+            chats.created_at,
+            chats.updated_at
           FROM chats
-          WHERE id = ?
+          LEFT JOIN listings ON listings.id = chats.listing_id
+          LEFT JOIN users AS seller ON seller.id = chats.seller_user_id
+          LEFT JOIN users AS buyer ON buyer.id = chats.buyer_user_id
+          WHERE chats.id = ?
           LIMIT 1
         `
       )
