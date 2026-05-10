@@ -14,10 +14,11 @@ function safeErrorMessage(error: unknown, fallback: string): string {
 
 export function AuthScreen() {
   const { hasAccessToken, isAuthenticated, loadingUser, requestOtp, verifyOtp } = useAuthSession();
+  const [mode, setMode] = useState<"signin" | "register">("signin");
   const [phone, setPhone] = useState(INITIAL_PHONE);
   const [otpCode, setOtpCode] = useState("");
   const [busy, setBusy] = useState(false);
-  const [message, setMessage] = useState("Sign in or register with your phone number.");
+  const [message, setMessage] = useState("");
 
   if (hasAccessToken && loadingUser) {
     return null;
@@ -42,11 +43,15 @@ export function AuthScreen() {
   async function handleVerifyOtp() {
     setBusy(true);
     try {
-      await verifyOtp({
+      const body = await verifyOtp({
         phone: phone.trim(),
         code: otpCode.trim()
       });
-      setMessage("Signed in successfully.");
+      if (body.isNewUser) {
+        setMessage("Welcome! Your account has been created.");
+      } else {
+        setMessage("Signed in successfully.");
+      }
     } catch (error) {
       setMessage(safeErrorMessage(error, "Failed to verify OTP."));
     } finally {
@@ -54,14 +59,45 @@ export function AuthScreen() {
     }
   }
 
+  const subtitle =
+    mode === "signin"
+      ? "Sign in to your account."
+      : "Create a new account to get started.";
+
+  const defaultMessage =
+    mode === "signin"
+      ? "Enter your phone number to sign in."
+      : "Enter your phone number to create an account.";
+
   return (
     <ScrollView style={styles.root} contentContainerStyle={styles.content} testID="auth-screen">
       <View style={styles.hero}>
         <Text style={styles.title}>Antique</Text>
-        <Text style={styles.subtitle}>Sign in to enter feed, inbox, activity, and profile.</Text>
+        <Text style={styles.subtitle}>{subtitle}</Text>
       </View>
 
       <View style={styles.card}>
+        <View style={styles.modeToggle}>
+          <Pressable
+            onPress={() => setMode("signin")}
+            style={[styles.modeButton, mode === "signin" && styles.modeButtonActive]}
+            accessibilityLabel="Sign in"
+            accessibilityRole="button"
+            accessibilityState={{ selected: mode === "signin" }}
+          >
+            <Text style={[styles.modeButtonText, mode === "signin" && styles.modeButtonTextActive]}>Sign in</Text>
+          </Pressable>
+          <Pressable
+            onPress={() => setMode("register")}
+            style={[styles.modeButton, mode === "register" && styles.modeButtonActive]}
+            accessibilityLabel="Register"
+            accessibilityRole="button"
+            accessibilityState={{ selected: mode === "register" }}
+          >
+            <Text style={[styles.modeButtonText, mode === "register" && styles.modeButtonTextActive]}>Register</Text>
+          </Pressable>
+        </View>
+
         <Text style={styles.label}>Phone number (E.164)</Text>
         <TextInput
           value={phone}
@@ -69,10 +105,16 @@ export function AuthScreen() {
           style={styles.input}
           autoCapitalize="none"
           keyboardType="phone-pad"
-          placeholder="+4915123400011"
+          placeholder="+1 234 567 8900"
           placeholderTextColor="#7a7a7a"
+          accessibilityLabel="Phone number"
         />
-        <Pressable onPress={() => void handleRequestOtp()} style={styles.primaryButton} disabled={busy || loadingUser}>
+        <Pressable
+          onPress={() => void handleRequestOtp()}
+          style={styles.primaryButton}
+          disabled={busy || loadingUser}
+          accessibilityRole="button"
+        >
           <Text style={styles.primaryButtonText}>Send code</Text>
         </Pressable>
 
@@ -85,8 +127,14 @@ export function AuthScreen() {
           keyboardType="number-pad"
           placeholder="123456"
           placeholderTextColor="#7a7a7a"
+          accessibilityLabel="One-time code"
         />
-        <Pressable onPress={() => void handleVerifyOtp()} style={styles.secondaryButton} disabled={busy || loadingUser}>
+        <Pressable
+          onPress={() => void handleVerifyOtp()}
+          style={styles.secondaryButton}
+          disabled={busy || loadingUser}
+          accessibilityRole="button"
+        >
           <Text style={styles.secondaryButtonText}>Continue</Text>
         </Pressable>
       </View>
@@ -97,7 +145,7 @@ export function AuthScreen() {
       </View>
 
       {busy || loadingUser ? <ActivityIndicator color="#f2f2f2" style={styles.spinner} /> : null}
-      <Text style={styles.message}>{message}</Text>
+      <Text style={styles.message}>{message || defaultMessage}</Text>
     </ScrollView>
   );
 }
@@ -133,6 +181,31 @@ const styles = StyleSheet.create({
     borderColor: "#232323",
     padding: 14,
     gap: 10
+  },
+  modeToggle: {
+    flexDirection: "row",
+    backgroundColor: "#0d0d0d",
+    borderRadius: 10,
+    padding: 3,
+    gap: 3
+  },
+  modeButton: {
+    flex: 1,
+    borderRadius: 8,
+    paddingVertical: 8,
+    alignItems: "center",
+    justifyContent: "center"
+  },
+  modeButtonActive: {
+    backgroundColor: "#2a2a2a"
+  },
+  modeButtonText: {
+    color: "#9a9a9a",
+    fontWeight: "600",
+    fontSize: 14
+  },
+  modeButtonTextActive: {
+    color: "#f4f4f4"
   },
   label: {
     color: "#dddddd",

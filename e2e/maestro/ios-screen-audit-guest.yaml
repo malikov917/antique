@@ -11,5 +11,5 @@ appId: host.exp.Exponent
 - assertVisible:
     id: "auth-screen"
 - assertVisible:
-    text: "Sign in or register with your phone number."
+    text: "Sign in to your account."
 - takeScreenshot: "guest-auth"
