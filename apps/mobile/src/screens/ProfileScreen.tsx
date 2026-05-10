@@ -1,9 +1,20 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
+import {
+  ActivityIndicator,
+  Alert,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Switch,
+  Text,
+  TextInput,
+  View
+} from "react-native";
 import { Redirect } from "expo-router";
 import type {
   AuthErrorResponse,
   MeResponse,
+  MeStatsResponse,
   RoleSwitchResponse,
   SellerApplication,
   SellerApplicationResponse,
@@ -50,6 +61,20 @@ async function readJson<T>(response: Response): Promise<T> {
   } satisfies ApiError;
 }
 
+function getInitials(name: string | null | undefined, phone: string | undefined): string {
+  if (name && name.trim()) {
+    const parts = name.trim().split(/\s+/);
+    if (parts.length >= 2) {
+      return (parts[0][0] + parts[1][0]).toUpperCase();
+    }
+    return parts[0].slice(0, 2).toUpperCase();
+  }
+  if (phone && phone.length >= 2) {
+    return phone.slice(-2).toUpperCase();
+  }
+  return "?";
+}
+
 export function ProfileScreen() {
   const { accessToken, user, setUser, signOut, isAuthenticated } = useAuthSession();
   const [application, setApplication] = useState<SellerApplication | null>(null);
@@ -61,6 +86,9 @@ export function ProfileScreen() {
   const [note, setNote] = useState("");
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState("Manage your account and role.");
+  const [stats, setStats] = useState<MeStatsResponse | null>(null);
+  const [pushEnabled, setPushEnabled] = useState(true);
+  const [language] = useState("English");
 
   const authHeaders = useMemo(
     () => ({
@@ -111,6 +139,12 @@ export function ProfileScreen() {
         }
       } else {
         setApplication(null);
+      }
+
+      const statsResponse = await fetch(`${API_BASE_URL}/v1/me/stats`, { headers: authHeaders });
+      if (statsResponse.ok) {
+        const statsBody = await readJson<MeStatsResponse>(statsResponse);
+        setStats(statsBody);
       }
 
       setMessage("Profile synced.");
@@ -226,26 +260,28 @@ export function ProfileScreen() {
     }
   }
 
+  function confirmSignOut() {
+    Alert.alert("Log out", "Are you sure you want to log out?", [
+      { text: "Cancel", style: "cancel" },
+      { text: "Log out", style: "destructive", onPress: signOut }
+    ]);
+  }
+
   if (!isAuthenticated) {
     return <Redirect href={"/auth" as never} />;
   }
 
+  const initials = getInitials(user?.displayName, user?.phone);
+  const isSeller = user?.allowedRoles.includes("seller");
+
   return (
     <ScrollView style={styles.root} contentContainerStyle={styles.content} testID="profile-screen">
-      <View style={styles.section}>
-        <Text style={styles.sectionTitle}>Your profile</Text>
-        <Text style={styles.help}>
-          {showRoleGovernance
-            ? "Account details and admin-only role governance controls."
-            : "Account details."}
-        </Text>
-      </View>
-
-      <View style={styles.section}>
-        <Text style={styles.statusLine}>Phone: {user?.phone ?? "-"}</Text>
-        <Text style={styles.statusLine}>User ID: {user?.id ?? "-"}</Text>
-        <Text style={styles.statusLine}>Active role: {user?.activeRole ?? "-"}</Text>
-        <Text style={styles.statusLine}>Allowed roles: {user?.allowedRoles.join(", ") ?? "-"}</Text>
+      <View style={styles.avatarSection}>
+        <View style={styles.avatarCircle}>
+          <Text style={styles.avatarText}>{initials}</Text>
+        </View>
+        <Text style={styles.avatarName}>{user?.displayName || "Your name"}</Text>
+        <Text style={styles.avatarPhone}>{user?.phone ?? "-"}</Text>
       </View>
 
       <View style={styles.section}>
@@ -255,7 +291,7 @@ export function ProfileScreen() {
           onChangeText={setDisplayName}
           style={styles.input}
           autoCapitalize="words"
-          placeholder="Antique seller"
+          placeholder="Your display name"
           placeholderTextColor="#7d7d7d"
         />
         <Pressable onPress={() => void saveDisplayName()} style={styles.secondaryButton} disabled={busy}>
@@ -263,7 +299,7 @@ export function ProfileScreen() {
         </Pressable>
       </View>
 
-      {user?.allowedRoles.includes("seller") ? (
+      {isSeller ? (
         <View style={styles.section}>
           <Text style={styles.label}>Payment info template</Text>
           <Text style={styles.help}>
@@ -284,9 +320,61 @@ export function ProfileScreen() {
         </View>
       ) : null}
 
+      {stats ? (
+        <View style={styles.section}>
+          <Text style={styles.label}>Stats</Text>
+          <View style={styles.statsGrid}>
+            <View style={styles.statCell}>
+              <Text style={styles.statValue}>{stats.buyerStats.offersMade}</Text>
+              <Text style={styles.statLabel}>Offers made</Text>
+            </View>
+            <View style={styles.statCell}>
+              <Text style={styles.statValue}>{stats.buyerStats.dealsWon}</Text>
+              <Text style={styles.statLabel}>Deals won</Text>
+            </View>
+            <View style={styles.statCell}>
+              <Text style={styles.statValue}>{stats.buyerStats.itemsInBasket}</Text>
+              <Text style={styles.statLabel}>In basket</Text>
+            </View>
+            {isSeller ? (
+              <>
+                <View style={styles.statCell}>
+                  <Text style={styles.statValue}>{stats.sellerStats.listingsCreated}</Text>
+                  <Text style={styles.statLabel}>Listings</Text>
+                </View>
+                <View style={styles.statCell}>
+                  <Text style={styles.statValue}>{stats.sellerStats.listingsSold}</Text>
+                  <Text style={styles.statLabel}>Sold</Text>
+                </View>
+                <View style={styles.statCell}>
+                  <Text style={styles.statValue}>{stats.sellerStats.sessionsHeld}</Text>
+                  <Text style={styles.statLabel}>Sessions</Text>
+                </View>
+              </>
+            ) : null}
+          </View>
+        </View>
+      ) : null}
+
+      <View style={styles.section}>
+        <Text style={styles.label}>Settings</Text>
+        <View style={styles.settingRow}>
+          <Text style={styles.settingLabel}>Push notifications</Text>
+          <Switch value={pushEnabled} onValueChange={setPushEnabled} />
+        </View>
+        <View style={styles.settingRow}>
+          <Text style={styles.settingLabel}>Language</Text>
+          <Text style={styles.settingValue}>{language}</Text>
+        </View>
+        <Pressable onPress={confirmSignOut} style={styles.signOutButton} disabled={busy}>
+          <Text style={styles.signOutButtonText}>Log out</Text>
+        </Pressable>
+      </View>
+
       {showRoleGovernance ? (
         <View style={styles.section}>
-          <Text style={styles.label}>Active role</Text>
+          <Text style={[styles.label, { color: "#e8a33c" }]}>Admin</Text>
+          <Text style={styles.help}>Role governance controls are restricted to allowlisted admins.</Text>
           <View style={styles.roleRow}>
             {(["buyer", "seller", "admin"] as const).map((role) => (
               <Pressable
@@ -345,9 +433,6 @@ export function ProfileScreen() {
         <Pressable onPress={() => void loadProfileAndApplication()} style={styles.ghostButton} disabled={busy}>
           <Text style={styles.ghostButtonText}>Refresh profile</Text>
         </Pressable>
-        <Pressable onPress={signOut} style={styles.signOutButton} disabled={busy}>
-          <Text style={styles.signOutButtonText}>Sign out</Text>
-        </Pressable>
       </View>
 
       {busy ? <ActivityIndicator color="#f8f8f8" style={styles.spinner} /> : null}
@@ -364,6 +449,33 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingVertical: 24,
     gap: 14
+  },
+  avatarSection: {
+    alignItems: "center",
+    gap: 8,
+    paddingVertical: 16
+  },
+  avatarCircle: {
+    width: 80,
+    height: 80,
+    borderRadius: 40,
+    backgroundColor: "#2a2a2a",
+    alignItems: "center",
+    justifyContent: "center"
+  },
+  avatarText: {
+    color: "#f8f8f8",
+    fontSize: 28,
+    fontWeight: "700"
+  },
+  avatarName: {
+    color: "#f8f8f8",
+    fontSize: 18,
+    fontWeight: "600"
+  },
+  avatarPhone: {
+    color: "#a0a0a0",
+    fontSize: 14
   },
   section: {
     backgroundColor: "#131313",
@@ -463,5 +575,42 @@ const styles = StyleSheet.create({
   },
   spinner: {
     marginVertical: 8
+  },
+  statsGrid: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 10
+  },
+  statCell: {
+    flex: 1,
+    minWidth: "30%",
+    backgroundColor: "#1a1a1a",
+    borderRadius: 10,
+    padding: 12,
+    alignItems: "center"
+  },
+  statValue: {
+    color: "#f8f8f8",
+    fontSize: 20,
+    fontWeight: "700"
+  },
+  statLabel: {
+    color: "#a0a0a0",
+    fontSize: 12,
+    marginTop: 4
+  },
+  settingRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    minHeight: 40
+  },
+  settingLabel: {
+    color: "#d3d3d3",
+    fontSize: 14
+  },
+  settingValue: {
+    color: "#a0a0a0",
+    fontSize: 14
   }
 });

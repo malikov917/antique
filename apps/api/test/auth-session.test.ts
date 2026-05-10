@@ -594,6 +594,156 @@ describe("auth session api", () => {
     await app.close();
   });
 
+  it("returns /v1/me/stats with zero counts for new user", async () => {
+    const smsProvider = new TestSmsProvider();
+    const app = await buildServer({
+      config: buildTestConfig(),
+      smsProvider,
+      muxClient: buildMockMuxClient()
+    });
+
+    await app.inject({
+      method: "POST",
+      url: "/v1/auth/otp/request",
+      payload: { phone: "+14155552671" }
+    });
+    const code = smsProvider.getLastCode("+14155552671");
+    const verify = await app.inject({
+      method: "POST",
+      url: "/v1/auth/otp/verify",
+      payload: {
+        phone: "+14155552671",
+        code,
+        deviceId: "ios-device-stats-1",
+        platform: "ios"
+      }
+    });
+    const accessToken = verify.json().tokens.accessToken as string;
+
+    const statsResponse = await app.inject({
+      method: "GET",
+      url: "/v1/me/stats",
+      headers: {
+        authorization: `Bearer ${accessToken}`
+      }
+    });
+
+    expect(statsResponse.statusCode).toBe(200);
+    expect(statsResponse.json()).toMatchObject({
+      buyerStats: {
+        offersMade: 0,
+        dealsWon: 0,
+        itemsInBasket: 0
+      },
+      sellerStats: {
+        listingsCreated: 0,
+        listingsSold: 0,
+        sessionsHeld: 0
+      }
+    });
+
+    await app.close();
+  });
+
+  it("returns /v1/me/stats reflecting marketplace activity", async () => {
+    const smsProvider = new TestSmsProvider();
+    const dbClient = createDatabaseClient(":memory:");
+    const app = await buildServer({
+      config: buildTestConfig(),
+      smsProvider,
+      muxClient: buildMockMuxClient(),
+      dbClient
+    });
+
+    const buyerAuth = await createAuthenticatedUser(app, smsProvider, "+14155552671");
+    const sellerAuth = await createAuthenticatedUser(app, smsProvider, "+14155552672");
+    dbClient.sqlite
+      .prepare("UPDATE users SET allowed_roles = ? WHERE id = ?")
+      .run(JSON.stringify(["buyer", "seller"]), sellerAuth.userId);
+
+    const switched = await app.inject({
+      method: "POST",
+      url: "/v1/me/role-switch",
+      headers: { authorization: `Bearer ${sellerAuth.accessToken}` },
+      payload: { role: "seller" }
+    });
+    expect(switched.statusCode).toBe(200);
+
+    await app.inject({
+      method: "POST",
+      url: "/v1/seller/sessions/open",
+      headers: { authorization: `Bearer ${sellerAuth.accessToken}` }
+    });
+
+    const listingRes = await app.inject({
+      method: "POST",
+      url: "/v1/listings",
+      headers: { authorization: `Bearer ${sellerAuth.accessToken}` },
+      payload: {
+        title: "Vintage Camera",
+        listedPriceCents: 5000,
+        playbackId: "playback-1"
+      }
+    });
+    const listingId = (listingRes.json() as { listing: { id: string } }).listing.id;
+
+    await app.inject({
+      method: "POST",
+      url: `/v1/listings/${listingId}/basket`,
+      headers: { authorization: `Bearer ${buyerAuth.accessToken}` }
+    });
+
+    await app.inject({
+      method: "POST",
+      url: `/v1/listings/${listingId}/offers`,
+      headers: { authorization: `Bearer ${buyerAuth.accessToken}` },
+      payload: {
+        amountCents: 5000,
+        shippingAddress: "123 Main St"
+      }
+    });
+
+    const buyerStatsRes = await app.inject({
+      method: "GET",
+      url: "/v1/me/stats",
+      headers: { authorization: `Bearer ${buyerAuth.accessToken}` }
+    });
+    expect(buyerStatsRes.statusCode).toBe(200);
+    expect(buyerStatsRes.json()).toMatchObject({
+      buyerStats: {
+        offersMade: 1,
+        dealsWon: 0,
+        itemsInBasket: 1
+      },
+      sellerStats: {
+        listingsCreated: 0,
+        listingsSold: 0,
+        sessionsHeld: 0
+      }
+    });
+
+    const sellerStatsRes = await app.inject({
+      method: "GET",
+      url: "/v1/me/stats",
+      headers: { authorization: `Bearer ${sellerAuth.accessToken}` }
+    });
+    expect(sellerStatsRes.statusCode).toBe(200);
+    expect(sellerStatsRes.json()).toMatchObject({
+      buyerStats: {
+        offersMade: 0,
+        dealsWon: 0,
+        itemsInBasket: 0
+      },
+      sellerStats: {
+        listingsCreated: 1,
+        listingsSold: 0,
+        sessionsHeld: 1
+      }
+    });
+
+    await app.close();
+  });
+
   it("revokes refresh token on logout", async () => {
     const smsProvider = new TestSmsProvider();
     const app = await buildServer({

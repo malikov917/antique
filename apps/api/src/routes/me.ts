@@ -1,6 +1,7 @@
 import type {
   BuyerStatusResponse,
   MeResponse,
+  MeStatsResponse,
   RoleSwitchRequest,
   RoleSwitchResponse,
   UpdateMeRequest
@@ -136,6 +137,68 @@ export async function registerMeRoutes(app: FastifyInstance, deps: MeRouteDeps):
       return {
         basketListingIds,
         offerListingIds
+      };
+    } catch (error) {
+      if (error instanceof AuthError) {
+        return sendAuthError(reply, error);
+      }
+      throw error;
+    }
+  });
+
+  app.get<{ Reply: MeStatsResponse }>("/v1/me/stats", async (request, reply) => {
+    try {
+      const auth = await deps.authService.authenticateFromAuthorizationHeader(getAuthorizationHeader(request));
+      let offersMade = 0;
+      let dealsWon = 0;
+      let itemsInBasket = 0;
+      let listingsCreated = 0;
+      let listingsSold = 0;
+      let sessionsHeld = 0;
+
+      if (deps.sqlite) {
+        const offersRow = deps.sqlite
+          .prepare("SELECT COUNT(*) AS count FROM offers WHERE buyer_user_id = ?")
+          .get(auth.user.id) as { count: number } | undefined;
+        offersMade = offersRow?.count ?? 0;
+
+        const dealsRow = deps.sqlite
+          .prepare("SELECT COUNT(*) AS count FROM deals WHERE buyer_user_id = ?")
+          .get(auth.user.id) as { count: number } | undefined;
+        dealsWon = dealsRow?.count ?? 0;
+
+        const basketRow = deps.sqlite
+          .prepare("SELECT COUNT(*) AS count FROM basket_items WHERE buyer_user_id = ?")
+          .get(auth.user.id) as { count: number } | undefined;
+        itemsInBasket = basketRow?.count ?? 0;
+
+        const listingsRow = deps.sqlite
+          .prepare("SELECT COUNT(*) AS count FROM listings WHERE seller_user_id = ?")
+          .get(auth.user.id) as { count: number } | undefined;
+        listingsCreated = listingsRow?.count ?? 0;
+
+        const salesRow = deps.sqlite
+          .prepare("SELECT COUNT(*) AS count FROM seller_sales WHERE seller_user_id = ?")
+          .get(auth.user.id) as { count: number } | undefined;
+        listingsSold = salesRow?.count ?? 0;
+
+        const sessionsRow = deps.sqlite
+          .prepare("SELECT COUNT(*) AS count FROM market_sessions WHERE seller_user_id = ?")
+          .get(auth.user.id) as { count: number } | undefined;
+        sessionsHeld = sessionsRow?.count ?? 0;
+      }
+
+      return {
+        buyerStats: {
+          offersMade,
+          dealsWon,
+          itemsInBasket
+        },
+        sellerStats: {
+          listingsCreated,
+          listingsSold,
+          sessionsHeld
+        }
       };
     } catch (error) {
       if (error instanceof AuthError) {
