@@ -12,7 +12,7 @@ IOS_DEVICE_ID="${IOS_DEVICE_ID:-}"
 HOST_IP="${HOST_IP:-$(ipconfig getifaddr en0 2>/dev/null || ipconfig getifaddr en1 2>/dev/null || echo 127.0.0.1)}"
 RUN_DIR="${RUN_DIR:-$ROOT_DIR/state/runs/ios-role-screen-audit/$(date +%Y%m%d-%H%M%S)}"
 DB_PATH="${API_DB_PATH:-$ROOT_DIR/apps/api/data/antique.sqlite}"
-RESET_DB="${RESET_DB:-0}"
+RESET_DB="${RESET_DB:-1}"
 DEMO_PLAYBACK_IDS="${DEMO_PLAYBACK_IDS:-kF01v9aKFlY63i2GkQKQGDv5Y9PbMGdtQD92j5qJCYWU,OfjbQ3esQifgboENTs4oDXslCP5sSnst,sp9WNcgcktsmlvFLKgNm3jjSGRD00RPlq}"
 
 # Deterministic demo users for re-use across runs.
@@ -196,9 +196,14 @@ seed_marketplace_data() {
   local listing1_response listing2_response listing3_response
   local listing1_id listing2_id listing3_id
 
-  listing1_response="$(api_post_json "$seller_token" "/v1/listings" '{"title":"Vintage Bronze Lamp","description":"Restored market-find lamp with patina","listedPriceCents":11000,"currency":"USD"}')"
-  listing2_response="$(api_post_json "$seller_token" "/v1/listings" '{"title":"Art Deco Vase","description":"Blue glazed vase in strong condition","listedPriceCents":8500,"currency":"USD"}')"
-  listing3_response="$(api_post_json "$seller_token" "/v1/listings" '{"title":"Carved Wooden Box","description":"Hand-carved trinket box","listedPriceCents":6400,"currency":"USD"}')"
+  local demo_playback_id_1 demo_playback_id_2 demo_playback_id_3
+  demo_playback_id_1="${DEMO_PLAYBACK_IDS%%,*}"
+  demo_playback_id_2="$(echo "$DEMO_PLAYBACK_IDS" | cut -d',' -f2)"
+  demo_playback_id_3="$(echo "$DEMO_PLAYBACK_IDS" | cut -d',' -f3)"
+
+  listing1_response="$(api_post_json "$seller_token" "/v1/listings" "{\"title\":\"Vintage Bronze Lamp\",\"description\":\"Restored market-find lamp with patina\",\"listedPriceCents\":11000,\"currency\":\"USD\",\"playbackId\":\"${demo_playback_id_1}\"}")"
+  listing2_response="$(api_post_json "$seller_token" "/v1/listings" "{\"title\":\"Art Deco Vase\",\"description\":\"Blue glazed vase in strong condition\",\"listedPriceCents\":8500,\"currency\":\"USD\",\"playbackId\":\"${demo_playback_id_2}\"}")"
+  listing3_response="$(api_post_json "$seller_token" "/v1/listings" "{\"title\":\"Carved Wooden Box\",\"description\":\"Hand-carved trinket box\",\"listedPriceCents\":6400,\"currency\":\"USD\",\"playbackId\":\"${demo_playback_id_3}\"}")"
 
   listing1_id="$(json_field 'j.listing.id' <<<"$listing1_response")"
   listing2_id="$(json_field 'j.listing.id' <<<"$listing2_response")"
@@ -243,8 +248,11 @@ seed_marketplace_data() {
   api_patch_json "$seller_token" "/v1/deals/${deal_id}/status" '{"status":"completed","reasonCode":"fulfilled_and_delivered"}' >/dev/null
 
   api_post_json "$seller_token" "/v1/announcements" '{"title":"Fresh arrivals this evening","body":"Three new collectible items just listed."}' >/dev/null
-  curl --silent --show-error --fail -X POST "http://127.0.0.1:${API_PORT}/v1/seller/sessions/${session_id}/close" \
-    -H "authorization: Bearer ${seller_token}" >/dev/null
+
+  if [[ "${KEEP_MARKET_OPEN:-0}" != "1" ]]; then
+    curl --silent --show-error --fail -X POST "http://127.0.0.1:${API_PORT}/v1/seller/sessions/${session_id}/close" \
+      -H "authorization: Bearer ${seller_token}" >/dev/null
+  fi
 
 cat > "$SEED_SUMMARY_FILE" <<SUMMARY
 # Seed Summary
@@ -387,6 +395,10 @@ run_flow "buyer" "e2e/maestro/ios-screen-audit-buyer.yaml"
 
 start_mobile "seller" "$SELLER_TOKEN"
 run_flow "seller" "e2e/maestro/ios-screen-audit-seller.yaml"
+
+# Admin flow: switch seller token to admin role and run admin audit
+start_mobile "admin" "$ADMIN_TOKEN"
+run_flow "admin" "e2e/maestro/ios-screen-audit-admin.yaml"
 
 echo "[run-ios-role-screen-audit] complete"
 echo "Run directory: $RUN_DIR"

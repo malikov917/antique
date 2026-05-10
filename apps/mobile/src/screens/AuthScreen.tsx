@@ -139,11 +139,6 @@ export function AuthScreen() {
         </Pressable>
       </View>
 
-      <View style={styles.hintBox}>
-        <Text style={styles.hintTitle}>Local beta note</Text>
-        <Text style={styles.hintText}>OTP is logged by the local API server (`OTP issued`) for quick test access.</Text>
-      </View>
-
       {busy || loadingUser ? <ActivityIndicator color="#f2f2f2" style={styles.spinner} /> : null}
       <Text style={styles.message}>{message || defaultMessage}</Text>
     </ScrollView>

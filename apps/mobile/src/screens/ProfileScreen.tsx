@@ -447,7 +447,8 @@ const styles = StyleSheet.create({
   },
   content: {
     paddingHorizontal: 16,
-    paddingVertical: 24,
+    paddingTop: 24,
+    paddingBottom: 120,
     gap: 14
   },
   avatarSection: {
