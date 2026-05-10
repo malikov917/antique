@@ -227,6 +227,19 @@ export interface BuyerStatusResponse {
   offerListingIds: string[];
 }
 
+export interface MeStatsResponse {
+  buyerStats: {
+    offersMade: number;
+    dealsWon: number;
+    itemsInBasket: number;
+  };
+  sellerStats: {
+    listingsCreated: number;
+    listingsSold: number;
+    sessionsHeld: number;
+  };
+}
+
 export interface UpdateMeRequest {
   displayName?: string | null;
   paymentInfo?: string | null;
