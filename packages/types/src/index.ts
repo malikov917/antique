@@ -479,8 +479,11 @@ export interface Chat {
   id: string;
   dealId: string;
   listingId: string;
+  listingTitle: string;
   sellerUserId: string;
+  sellerDisplayName: string;
   buyerUserId: string;
+  buyerDisplayName: string;
   createdAt: string;
   updatedAt: string;
 }
