@@ -177,7 +177,7 @@ seed_marketplace_data() {
   local admin_user_id="$7"
   local refreshed_admin_token_and_id
 
-  sqlite3 "$DB_PATH" "UPDATE users SET active_role='admin' WHERE id='${admin_user_id}';"
+  sqlite3 "$DB_PATH" "UPDATE users SET active_role='admin' WHERE id='${admin_user_id}';" >/dev/null
   refreshed_admin_token_and_id="$(request_access_token "$ADMIN_PHONE" "audit-admin-ios-elevated")"
   admin_token="${refreshed_admin_token_and_id%%|*}"
 
@@ -249,7 +249,7 @@ seed_marketplace_data() {
 
   api_post_json "$seller_token" "/v1/announcements" '{"title":"Fresh arrivals this evening","body":"Three new collectible items just listed."}' >/dev/null
 
-  if [[ "${KEEP_MARKET_OPEN:-0}" != "1" ]]; then
+  if [[ "${KEEP_MARKET_OPEN:-0}" != "1" && "${OPEN_MARKET_DAY:-0}" != "1" ]]; then
     curl --silent --show-error --fail -X POST "http://127.0.0.1:${API_PORT}/v1/seller/sessions/${session_id}/close" \
       -H "authorization: Bearer ${seller_token}" >/dev/null
   fi
@@ -273,6 +273,8 @@ cat > "$SEED_SUMMARY_FILE" <<SUMMARY
 - Chat: ${chat_id}
 - Address correction: ${correction_id}
 SUMMARY
+
+  echo "$admin_token"
 }
 
 start_mobile() {
@@ -364,11 +366,11 @@ ADMIN_TOKEN_AND_ID="$(request_access_token "$ADMIN_PHONE" "audit-admin-ios")"
 ADMIN_TOKEN="${ADMIN_TOKEN_AND_ID%%|*}"
 ADMIN_USER_ID="${ADMIN_TOKEN_AND_ID##*|}"
 
-seed_marketplace_data \
+ADMIN_TOKEN="$(seed_marketplace_data \
   "$BUYER_TOKEN" "$BUYER_USER_ID" \
   "$BUYER2_TOKEN" \
   "$SELLER_TOKEN" "$SELLER_USER_ID" \
-  "$ADMIN_TOKEN" "$ADMIN_USER_ID"
+  "$ADMIN_TOKEN" "$ADMIN_USER_ID")"
 
 cat > "$TOKENS_FILE" <<TOKENS
 BUYER_PHONE=${BUYER_PHONE}
