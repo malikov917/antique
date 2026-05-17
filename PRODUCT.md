@@ -1,6 +1,6 @@
 # Antique Product Specification (v2)
 
-Last updated: May 6, 2026
+Last updated: May 10, 2026
 Owner: Product + Engineering (Linear team: Antique)
 Source of truth for delivery: Linear issues mapped to this spec
 
@@ -47,11 +47,11 @@ Core principles:
 | ReelsScreen compilation regression fix | Done | 2026-05-05 | ANT-78 |
 | Deals test ordering stability | Done | 2026-05-05 | ANT-79 |
 | Typecheck regression fix | Done | 2026-05-05 | ANT-82 |
-| Auth screen explicit registration affordance + placeholder cleanup | Planned | 2026-05-05 | ANT-85 |
-| Feed reels listing info overlay + buyer purchase CTA + tap-to-detail | Planned | 2026-05-05 | ANT-86 |
-| Inbox UI overhaul: clean cards, listing titles, visual hierarchy | Planned | 2026-05-05 | ANT-87 |
-| Profile screen enrichment: avatar, stats, settings | Planned | 2026-05-05 | ANT-88 |
-| Activity screen role-aware tab filters + relative timestamps | Planned | 2026-05-05 | ANT-89 |
+| Auth screen explicit registration affordance + placeholder cleanup | Done | 2026-05-10 | ANT-85 |
+| Feed reels listing info overlay + buyer purchase CTA + tap-to-detail | Done | 2026-05-10 | ANT-86 |
+| Inbox UI overhaul: clean cards, listing titles, visual hierarchy | Done | 2026-05-10 | ANT-87 |
+| Profile screen enrichment: avatar, stats, settings | Done | 2026-05-10 | ANT-88 |
+| Activity screen role-aware tab filters + relative timestamps | Done | 2026-05-10 | ANT-89 |
 
 Status keys:
 - `Done`: implemented and verified
@@ -78,12 +78,8 @@ Implemented today:
 15. E2E workflow coverage with Maestro iOS screen audit and deterministic seeded role flows.
 
 Remaining gaps:
-1. Seller chat productivity: one-tap payment/help template insertion in deal chat (ANT-72 in review).
-2. Auth screen UX polish: explicit register affordance and placeholder cleanup (ANT-85 planned).
-3. Feed conversion surface: listing info overlay, primary purchase CTA, and tap-to-detail navigation (ANT-86 planned).
-4. Inbox visual overhaul: clean cards with listing titles, avatars, timestamps, and unread state (ANT-87 planned).
-5. Profile screen enrichment: avatar, buyer/seller stats, and settings (ANT-88 planned).
-6. Activity screen relative timestamps and final visual polish (ANT-89 planned).
+1. Seller dashboard / inventory management entry point (observed gap; not explicitly scoped for beta).
+2. Search or discovery affordance in tab navigation (observed gap; not explicitly scoped for beta).
 
 ### 3.1 Manual Test Requirement Matrix (March 14, 2026)
 
@@ -348,27 +344,31 @@ Add validation constants:
 6. Feed source alignment (ANT-73):
    - Reels feed now uses marketplace listing/video entities instead of in-memory demo videos.
 
-## 11) What Remains (P6 screen-audit UX polish)
+## 11) Delivered (continued from Section 11)
 
-1. Seller-to-buyer conversion UX (ANT-72 in review):
+P6 screen-audit UX polish (completed May 5–10, 2026):
+1. Seller-to-buyer conversion UX (Done: ANT-72, 2026-05-10):
    - One-tap payment/help template insertion in deal chat.
-2. Auth UX polish (ANT-85 planned):
+2. Auth UX polish (Done: ANT-85, 2026-05-10):
    - Explicit register vs sign-in affordance on auth screen.
    - Remove hardcoded test placeholder from phone input.
-3. Feed conversion surface (ANT-86 planned):
+3. Feed conversion surface (Done: ANT-86, 2026-05-10):
    - Listing title, price, and description overlay on reels.
    - Primary CTA for basket/offer directly on feed.
    - Tap-to-detail navigation to dedicated listing screen.
-4. Inbox visual quality (ANT-87 planned):
+4. Inbox visual quality (Done: ANT-87, 2026-05-10):
    - Replace raw UUIDs with listing titles.
    - Remove debug-field dump; use clean cards with avatar, preview, timestamp, unread state.
-5. Profile depth (ANT-88 planned):
+5. Profile depth (Done: ANT-88, 2026-05-10):
    - Avatar, buyer/seller stats, settings section.
    - Role-appropriate copy and placeholders.
-6. Existing platform hardening that remains relevant:
-   - Reliability controls (idempotent offer acceptance, optimistic locking).
-   - Observability dashboards and audit completeness.
-   - Moderation rules for video/listing quality.
+6. Activity screen polish (Done: ANT-89, 2026-05-10):
+   - Role-aware tab filters and relative timestamps.
+
+Remaining platform hardening:
+- Reliability controls (idempotent offer acceptance, optimistic locking).
+- Observability dashboards and audit completeness.
+- Moderation rules for video/listing quality.
 
 ## 12) Prioritized Delivery Roadmap
 
@@ -404,19 +404,19 @@ Add validation constants:
 ### P5 (manual-test product alignment, May 5, 2026)
 1. OTP throttle calibration for real-world login cadence. (Done: ANT-71)
 2. Bottom tab icon pass and navigation affordance polish. (Done: ANT-70)
-3. One-tap seller payment-info message in chat. (In Review: ANT-72)
+3. One-tap seller payment-info message in chat. (Done: ANT-72, 2026-05-10)
 4. Persistent catalog outside market day. (Done: ANT-74)
 5. `In stock` / `Out of stock` status across API and mobile. (Done: ANT-74)
 6. Feed source alignment with marketplace domain state. (Done: ANT-73)
 7. Buyer basket/offer submission UI. (Done: ANT-81)
 8. Inbox/Activity workflow depth. (Done: ANT-75)
 
-### P6 (screen-audit UX polish, May 5, 2026)
-1. Auth screen explicit register affordance + placeholder cleanup (ANT-85).
-2. Feed reels listing info overlay + purchase CTA + tap-to-detail (ANT-86).
-3. Inbox UI overhaul: clean cards, titles, visual hierarchy (ANT-87).
-4. Profile screen enrichment: avatar, stats, settings (ANT-88).
-5. Activity screen role-aware filters + relative timestamps (ANT-89).
+### P6 (screen-audit UX polish, May 5–10, 2026) — Done
+1. Auth screen explicit register affordance + placeholder cleanup (Done: ANT-85, 2026-05-10).
+2. Feed reels listing info overlay + purchase CTA + tap-to-detail (Done: ANT-86, 2026-05-10).
+3. Inbox UI overhaul: clean cards, titles, visual hierarchy (Done: ANT-87, 2026-05-10).
+4. Profile screen enrichment: avatar, stats, settings (Done: ANT-88, 2026-05-10).
+5. Activity screen role-aware filters + relative timestamps (Done: ANT-89, 2026-05-10).
 
 ## 13) Testing and Acceptance Criteria
 
@@ -453,24 +453,24 @@ These are implementation quality gaps observed during role-based iOS walkthrough
 ### 13.2 Current UX/E2E quality gaps (observed on May 5, 2026)
 Additional gaps identified during iOS role screen audit with fully seeded marketplace data:
 
-1. Auth screen lacks explicit registration affordance:
-1. No "Register" button or separate registration screen; login and registration are conflated into a single OTP flow with no visual distinction.
-2. Phone input placeholder shows hardcoded test number `+4915123400011`, which leaks seeded data and looks unprofessional.
-2. Feed lacks purchase conversion surface:
-1. Reels overlay shows no listing title, price, or description on the video.
-2. No "Add to Basket" or "Make Offer" CTA is visible on the feed; buyer cannot initiate purchase without leaving the reels experience.
-3. No tap-to-detail affordance: tapping a reel does not navigate to a dedicated listing detail screen.
-3. Inbox card design is overloaded with raw internal data:
-1. Listing title is hidden; raw UUID (`Listing 948433d2-...`) is displayed instead.
-2. Cards expose internal fields (deal status, active address, correction count, chat ID) in an unstructured wall of text.
-3. Missing visual hierarchy: unread indicator, avatar/seller identity, clean message preview, and timestamp formatting.
+1. ~~Auth screen lacks explicit registration affordance~~ (Resolved: ANT-85, 2026-05-10):
+   - No "Register" button or separate registration screen; login and registration are conflated into a single OTP flow with no visual distinction.
+   - Phone input placeholder shows hardcoded test number `+4915123400011`, which leaks seeded data and looks unprofessional.
+2. ~~Feed lacks purchase conversion surface~~ (Resolved: ANT-86, 2026-05-10):
+   - Reels overlay shows no listing title, price, or description on the video.
+   - No "Add to Basket" or "Make Offer" CTA is visible on the feed; buyer cannot initiate purchase without leaving the reels experience.
+   - No tap-to-detail affordance: tapping a reel does not navigate to a dedicated listing detail screen.
+3. ~~Inbox card design is overloaded with raw internal data~~ (Resolved: ANT-87, 2026-05-10):
+   - Listing title is hidden; raw UUID (`Listing 948433d2-...`) is displayed instead.
+   - Cards expose internal fields (deal status, active address, correction count, chat ID) in an unstructured wall of text.
+   - Missing visual hierarchy: unread indicator, avatar/seller identity, clean message preview, and timestamp formatting.
 4. ~~Activity tab filters are not role-aware~~ (Resolved: ANT-75, 2026-05-05).
-5. Profile screen is under-featured:
-   1. Only phone, user ID, active role, and a single display-name field are shown.
-   2. No avatar/profile photo upload or placeholder.
-   3. No account settings (notifications, privacy, language, logout confirmation).
-   4. No buyer stats (offers made, deals won) or seller stats (listings sold, sessions held).
-   5. Display name placeholder text is "Antique seller" even for buyer-only accounts.
+5. ~~Profile screen is under-featured~~ (Resolved: ANT-88, 2026-05-10):
+   - Only phone, user ID, active role, and a single display-name field are shown.
+   - No avatar/profile photo upload or placeholder.
+   - No account settings (notifications, privacy, language, logout confirmation).
+   - No buyer stats (offers made, deals won) or seller stats (listings sold, sessions held).
+   - Display name placeholder text is "Antique seller" even for buyer-only accounts.
 6. Additional polish gaps:
    1. ~~Activity timestamps use raw locale date strings~~ (Resolved: ANT-75, 2026-05-05).
    2. Seller feed shows an "Upload" button but no seller dashboard or inventory management entry point.
@@ -494,7 +494,7 @@ For current beta, prioritize visual quality and flow clarity before deeper secur
    1. Safe-area and spacing fixes on Feed/Inbox/Activity/Profile. (Implemented)
    2. Copy cleanup for unclear labels (for example, ambiguous `Updates` button naming). (Implemented)
    3. Add bottom tab icons and keep visual QA artifact-driven using role-by-role screenshots from iOS walkthroughs. (Implemented: ANT-70)
-5. Feed conversion surface and inbox overhaul remain the primary open UX work (ANT-86, ANT-87).
+5. Feed conversion surface and inbox overhaul (Done: ANT-86, ANT-87, 2026-05-10).
 
 Delivery gate before moving ticket to `In Review`:
 1. `pnpm lint`

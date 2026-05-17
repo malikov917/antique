@@ -5,9 +5,7 @@ import {
   buildMockMuxClient,
   buildTestConfig,
   createAuthenticatedBuyer,
-  createAuthenticatedSeller,
   createAuthenticatedSession,
-  createAuthenticatedUser,
   TestSmsProvider
 } from "./helpers/apiTestHarness.js";
 

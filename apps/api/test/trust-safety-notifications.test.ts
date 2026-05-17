@@ -6,7 +6,6 @@ import {
   buildTestConfig,
   createAuthenticatedSeller,
   createAuthenticatedSession,
-  createAuthenticatedUser,
   TestSmsProvider
 } from "./helpers/apiTestHarness.js";
 

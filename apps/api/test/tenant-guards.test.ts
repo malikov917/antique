@@ -4,7 +4,6 @@ import { createDatabaseClient } from "../src/db/client.js";
 import {
   buildMockMuxClient,
   buildTestConfig,
-  createAuthenticatedBuyer,
   createAuthenticatedSeller,
   createAuthenticatedSession,
   createAuthenticatedUser,
