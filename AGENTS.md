@@ -34,6 +34,7 @@ Attach output summary in the Linear issue comment.
 - Before starting new dev processes, preflight ports: check `4000` (API) and `8081` (Expo) with `lsof`; if occupied, verify owner/health and either reuse intentionally or stop it before launching duplicates.
 - If API port `4000` is already in use, verify `curl http://127.0.0.1:4000/health` before declaring backend down.
 - If upload endpoints return `503` locally, verify Mux credentials are loaded from `apps/api/.env` or repository root `.env` before retrying.
+- **Node version compatibility:** The project requires Node 25.x. Node 26 breaks `better-sqlite3` (prebuilt ABI mismatch + V8 API deprecations prevent source rebuild). If tests fail with `NODE_MODULE_VERSION` mismatch, switch to Node 25 (`brew unlink node && brew link node@25.9.0_3`).
 
 ## Continuous Improvement Rule
 - After each ticket, keep only 1-3 durable lessons in this file (remove stale/redundant ones).
