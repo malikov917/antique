@@ -58,6 +58,13 @@ Attach output summary in the Linear issue comment.
   - `Next action:`
   - `ETA:`
 
+## Linear Issue Status Transitions
+Use `./scripts/linear-update.sh <issue-id> <state>` to move tickets:
+```bash
+./scripts/linear-update.sh ANT-90 Done
+```
+This wraps the authenticated Linear MCP connection (OAuth tokens stored in `~/.kimi/mcp-oauth/`). Requires Kimi Python (`~/.local/share/uv/tools/kimi-code/bin/python3`).
+
 ## Engineering Defaults
 - Keep API backward-compatible for `/v1/*` unless issue explicitly allows breaking changes.
 - Prefer typed interfaces in `packages/types`.
