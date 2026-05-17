@@ -59,11 +59,10 @@ Attach output summary in the Linear issue comment.
   - `ETA:`
 
 ## Linear Issue Status Transitions
-Use `./scripts/linear-update.sh <issue-id> <state>` to move tickets:
-```bash
-./scripts/linear-update.sh ANT-90 Done
-```
-This wraps the authenticated Linear MCP connection (OAuth tokens stored in `~/.kimi/mcp-oauth/`). Requires Kimi Python (`~/.local/share/uv/tools/kimi-code/bin/python3`).
+Linear MCP is configured in Kimi Code (`~/.kimi/mcp.json`). Use the native `linear` tools directly:
+- `save_issue` — update status, assignee, or other fields
+- `get_issue` — fetch issue details
+- `list_issue_statuses` — view available states for a team
 
 ## Engineering Defaults
 - Keep API backward-compatible for `/v1/*` unless issue explicitly allows breaking changes.
